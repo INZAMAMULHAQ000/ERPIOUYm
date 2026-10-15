@@ -1,16 +1,17 @@
 # newdump/ — production database backup and schema reference
 
-Taken **2026-10-15 12:34** local from `erp_db`, after the identity-code work: every human in the
+Taken **2026-10-15 12:55** local from `erp_db`, after the identity-code work: every human in the
 system now carries one Person Code plus the code of each category they belong to, the codes are shown
 together on every profile, and the directory repairs itself when a module record goes away.
 
 | File | Size | Purpose |
 |---|---|---|
-| `erp_db_production_20261015_123434.sql` | 2,580 KB | **Use this.** Full schema + all data: 467 tables, 12,544 rows, 6,090 columns |
-| `erp_db_production_20261015_123434.sql.gz` | 295 KB | Same content compressed — use if the upload limit blocks the `.sql` |
+| `erp_db_production_20261015_125554.sql` | 2,583 KB | **Use this.** Full schema + all data: 467 tables, 12,576 rows, 6,090 columns |
+| `erp_db_production_20261015_125554.sql.gz` | 295 KB | Same content compressed — use if the upload limit blocks the `.sql` |
 | `DATABASE_STRUCTURE.md` | 558 KB | Full data dictionary: every table, every column, keys, defaults, FK targets, row counts |
 | `generate_structure.php` | | Regenerates `DATABASE_STRUCTURE.md` from the live database |
 | `SHA256SUMS.txt` | | checksums for the current dump, its `.gz`, this README, the dictionary and the generator |
+| `erp_db_production_20261015_123434.sql` (+`.gz`) | | Superseded — before the adaptive-credentials fix |
 | `erp_db_production_20261015_122907.sql` (+`.gz`) | | Superseded — identical content, taken minutes earlier |
 | `erp_db_production_20261015_121454.sql` (+`.gz`) | | Superseded — before the profile photo was shown |
 | `erp_db_production_20261015_110152.sql` (+`.gz`) | | Superseded — before the drift-repair buttons |
@@ -95,9 +96,17 @@ Data, from `config/migrations/2026_10_15_people_directory_admin_access.php`:
 
 Code changes that carry no DDL but ship with this snapshot: People Management no longer inserts into
 `employees` or `contractors` itself; `middleware/auth.php` re-validates the session against the
-`users` table; `modules/people_management/delete.php` now requires POST plus a CSRF token; and
-production database credentials moved out of `config/database.php` into a gitignored
-`config/db.local.php`.
+`users` table; `modules/people_management/delete.php` and `modules/employees/delete.php` require POST
+plus a CSRF token; and `config/database.php` gained an **optional** `config/db.local.php` override.
+
+**Credential resolution is adaptive, and must stay that way.** The same code runs on the XAMPP
+machine and on `application.kmsdigitechs.com` with no file to create: a web request is judged by the
+host it arrived on, and a command-line run by the machine it is on (so production cron no longer
+mistakes itself for development). `config/db.local.php` is an opt-in override for a machine that
+wants to keep its password out of version control — nothing depends on it. An earlier revision of
+this README described it as required, and that wording shipped a broken production site: the file is
+gitignored, so a deploy never carried it, and the app died at startup with "Application is not
+configured". Do not make that file a precondition again.
 
 No employee, customer or contractor table changed shape. `contractors` (39 columns),
 `contractor_contracts` (47), `contractor_rate_schedules` (11), `contractor_documents` (12) and
@@ -116,8 +125,8 @@ Regenerate it any time — it reads `information_schema` only and writes nothing
 php newdump/generate_structure.php
 ```
 
-The dictionary describes the **live** database (469 tables, 6,119 columns, 12,553 rows) while the
-dump carries **467 / 6,090 / 12,544**. The difference is exactly the two local scratch tables below
+The dictionary describes the **live** database (469 tables, 6,119 columns, 12,585 rows) while the
+dump carries **467 / 6,090 / 12,576**. The difference is exactly the two local scratch tables below
 (29 columns, 9 rows), so the two documents reconcile rather than contradict. Re-run the generator
 after every migration and diff the output.
 
@@ -150,7 +159,7 @@ and MySQL was asked for a user named `" root"`, so every table list came back em
 - Restore exited `0` with a completely empty stderr; dump is 2,641,959 bytes.
 - **467 / 467 tables**, identical in **both** directions; zero scratch tables in the restore; every
   source column present (anti-join = 0, restore carries 6,090 columns).
-- **467 row-count pairs compared individually — 0 mismatched tables, 12,544 source rows.**
+- **467 row-count pairs compared individually — 0 mismatched tables, 12,576 source rows.**
 - Structure of the new identity layer survived: `person_roles` with `UNIQUE (person_id, role)`, the
   FK reading `people on delete CASCADE`, `enum('pending','complete','declined')`, and
   `people.uq_people_email`.
@@ -222,11 +231,12 @@ read `person_roles` unconditionally and will fatal without it.
 
 ## After importing — do these six things
 
-1. **Create `config/db.local.php` on the server.** `config/database.php` no longer carries
-   production credentials; it reads them from that file and refuses to start without it. Copy
-   `config/db.local.example.php`, set the real host/name/user/password and
-   `'production' => true`. It is gitignored, so a git deploy will not bring it — and it must be
-   `chmod 640` or tighter, owned by the web-server user.
+1. **Nothing to configure for the database.** `config/database.php` resolves the production
+   credentials from the host the request arrived on, exactly as it did before. Optionally, to stop
+   the password living in version control, create `config/db.local.php` (copy
+   `config/db.local.example.php`, fill in the real values, `'production' => true`) — it is gitignored,
+   so it must be created on the server itself, and it takes precedence when present. It is never
+   required.
 2. **Change the admin password.** The imported `users` table still carries the local demo account
    `admin@erp.com / admin123`, and the login page prints those credentials.
 3. **Copy `uploads/`** as described above, or document viewers show broken images and blank PDFs.

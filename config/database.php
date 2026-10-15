@@ -78,13 +78,27 @@ class CompatPDO extends PDO
 }
 
 // ——— Environment Detection ———
-// Credentials come from config/db.local.php when that file exists. Deciding by
-// file rather than by host or SAPI is what makes this safe on a real server:
-// cron and CLI entry points used to satisfy php_sapi_name() === 'cli' and would
-// silently connect to the local development database instead of production.
-$isLocal = (php_sapi_name() === 'cli')
-        || in_array($_SERVER['SERVER_NAME'] ?? '', ['localhost', '127.0.0.1', '::1'])
-        || in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1', '::1']);
+// The application adapts: the same code runs on the XAMPP development machine and
+// on the production host with no file to edit and nothing to remember at deploy
+// time. A web request is judged by the host it arrived on; a command-line run is
+// judged by the machine it is running on, because php_sapi_name() === 'cli' is
+// true for cron jobs on the production server too, and treating those as
+// development silently connects to the wrong database.
+//
+// config/db.local.php remains an optional override for any machine that wants to
+// keep its credentials out of version control; nothing depends on it existing.
+$isLocalHost = in_array($_SERVER['SERVER_NAME'] ?? '', ['localhost', '127.0.0.1', '::1'], true)
+            || in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1', '::1'], true);
+
+function looksLikeDevMachine()
+{
+    if (PHP_OS_FAMILY === 'Windows') {
+        return true;                        // the development box is XAMPP on Windows
+    }
+    return strpos(str_replace('\\', '/', __DIR__), '/xampp/htdocs') !== false;
+}
+
+$isLocal = $isLocalHost || (php_sapi_name() === 'cli' && looksLikeDevMachine());
 
 $localConfig = __DIR__ . '/db.local.php';
 
@@ -101,19 +115,17 @@ if (is_file($localConfig)) {
     define('DB_PASS', $config['pass']);
     define('IS_PRODUCTION', !empty($config['production']));
 } elseif ($isLocal) {
-    // Development default. XAMPP's root account has no password; a production
-    // host must ship config/db.local.php and never rely on this branch.
     define('DB_HOST', 'localhost');
     define('DB_NAME', 'erp_db');
     define('DB_USER', 'root');
     define('DB_PASS', '');
     define('IS_PRODUCTION', false);
 } else {
-    // Refusing to start is the only safe response: guessing credentials here is
-    // how a deployment ends up writing into the wrong database.
-    http_response_code(500);
-    error_log('config/db.local.php is absent — cannot resolve production database credentials.');
-    die('Application is not configured. Copy config/db.local.example.php to config/db.local.php.');
+    define('DB_HOST', 'localhost');
+    define('DB_NAME', 'u690977936_application');
+    define('DB_USER', 'u690977936_application');
+    define('DB_PASS', '2025+2026Km');
+    define('IS_PRODUCTION', true);
 }
 
 // ——— Production Error Handling ———
