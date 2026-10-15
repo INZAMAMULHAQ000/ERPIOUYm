@@ -5,6 +5,7 @@ require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once '../../helpers/pagination.php';
 require_once '../../helpers/people_onboarding.php';
+require_once '../../helpers/attachment_storage.php';
 
 if (!hasPermission('people_management.view')) {
     die('Access Denied');
@@ -141,6 +142,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         to('modules/people_management/index.php');
         exit;
     }
+
+    /*
+     * The directory is the assembly point, so a record that exists in HRMS,
+     * Contracts or the Customer Master but has no Person Code is a gap in this
+     * page and is offered for closing here. Each one goes through exactly the
+     * path a module save uses: reuse the person matched on email, otherwise mint
+     * a new Person Code. Organisations are skipped — they are not people.
+     */
+    if ($action === 'sync_directory') {
+
+        if (!hasPermission('people_management.create')) {
+            flash('error', 'You do not have permission to add records to the directory.');
+            to('modules/people_management/index.php');
+            exit;
+        }
+
+        $sync = peopleSyncDirectory($db);
+        $reconciled = peopleReconcileRoles($db);
+        $added = $sync['tallies']['created'] + $sync['tallies']['attached'];
+        $left = $sync['tallies']['conflict'] + $sync['tallies']['failed'];
+
+        flash($added && !$left ? 'success' : ($added || $reconciled ? 'warning' : 'error'),
+            trim($added . ' record(s) added to the directory'
+                . ($reconciled ? ', ' . count($reconciled)
+                    . ' person type(s) reopened because their record no longer exists' : '')
+                . ($left ? ', ' . $left . ' need a decision first' : '')));
+        foreach (array_slice($sync['notes'], 0, 3) as $note) {
+            flash('info', $note);
+        }
+        to('modules/people_management/index.php');
+        exit;
+    }
+
+    /*
+     * The reverse gap: directory entries left with nothing behind them by a
+     * deletion made somewhere this page could not see. Only rows with no record
+     * in any category and no login account are touched, and each one is logged.
+     */
+    if ($action === 'prune_shells') {
+
+        if (!hasPermission('people_management.delete')) {
+            flash('error', 'You do not have permission to remove directory entries.');
+            to('modules/people_management/index.php');
+            exit;
+        }
+
+        $removed = peoplePruneShells($db);
+        flash($removed ? 'success' : 'info', $removed
+            ? count($removed) . ' directory entries removed for having no record in any category: '
+                . implode(', ', array_slice($removed, 0, 6))
+                . (count($removed) > 6 ? ' +' . (count($removed) - 6) . ' more' : '')
+            : 'Nothing to clean up — every directory entry still has a record or a login.');
+        to('modules/people_management/index.php');
+        exit;
+    }
 }
 
 /*
@@ -259,7 +315,9 @@ $stmt = $db->prepare("
         u.status AS user_status,
         (SELECT e.employee_code FROM employees e WHERE e.id = p.employee_id LIMIT 1) AS employee_code,
         (SELECT cl.client_code FROM clients cl WHERE cl.id = p.customer_id LIMIT 1) AS client_code,
-        (SELECT ct.contractor_code FROM contractors ct WHERE ct.id = p.contractor_id LIMIT 1) AS contractor_code
+        (SELECT ct.contractor_code FROM contractors ct WHERE ct.id = p.contractor_id LIMIT 1) AS contractor_code,
+        (SELECT e.photo_path FROM employees e WHERE e.id = p.employee_id LIMIT 1) AS employee_photo,
+        (SELECT ct.photo_path FROM contractors ct WHERE ct.id = p.contractor_id LIMIT 1) AS contractor_photo
     FROM people p
     LEFT JOIN users u ON p.user_id = u.id
     $where
@@ -311,6 +369,14 @@ foreach ($categoryCounts as $row) {
 }
 
 $highlight = (int) ($_GET['highlight'] ?? 0);
+
+// Records that live in a module but have no Person Code: the gap this page is
+// supposed to close. Read cheaply (one indexed anti-join per module).
+$unlisted = peopleUnlistedRecords($db);
+$unlistedLabels = ['employee' => 'Employees', 'customer' => 'Individual customers', 'contractor' => 'Contractors'];
+
+// The other direction: directory entries left behind by a module deletion.
+$shells = peopleShellPeople($db);
 
 $csrf = csrfToken();
 
@@ -531,6 +597,82 @@ $catColors = [
     Person-type tiles count directory entries whose record is completed in that module. One person can
     appear in several of them, and unfinished steps are shown on the row itself.
 </p>
+
+<?php if ($unlisted): ?>
+<?php
+    $byRole = [];
+    foreach ($unlisted as $u) {
+        $byRole[$u['role']][] = $u;
+    }
+?>
+<div class="bg-amber-50 border border-amber-300 rounded-lg p-5 mb-6">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+            <h3 class="text-sm font-semibold text-amber-900 mb-1">
+                <i class="fas fa-circle-exclamation mr-1"></i>
+                <?= count($unlisted) ?> record<?= count($unlisted) === 1 ? '' : 's' ?> exist<?= count($unlisted) === 1 ? 's' : '' ?> in a module but not in this directory
+            </h3>
+            <p class="text-xs text-amber-800 mb-2">
+                People Management is where every category comes together, so these are missing from it.
+                Adding them issues a Person Code, or reuses the person their email already names — it never
+                creates a second person, and organisations are not people so they are never listed here.
+            </p>
+            <ul class="text-xs text-amber-900 space-y-0.5">
+                <?php foreach ($byRole as $roleKey => $items): ?>
+                <li>
+                    <span class="font-semibold"><?= $unlistedLabels[$roleKey] ?? ucfirst($roleKey) ?>:</span>
+                    <?= htmlspecialchars(implode(', ', array_map(fn($i) => $i['name'] !== '' ? $i['name'] . ' (' . $i['code'] . ')' : $i['code'], array_slice($items, 0, 6))), ENT_QUOTES) ?><?= count($items) > 6 ? ' +' . (count($items) - 6) . ' more' : '' ?>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+        <?php if (hasPermission('people_management.create')): ?>
+        <form method="POST" class="shrink-0">
+            <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+            <input type="hidden" name="action" value="sync_directory">
+            <button type="submit" class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 text-sm whitespace-nowrap">
+                <i class="fas fa-arrows-rotate mr-1"></i>Add them &amp; repair stale rows
+            </button>
+        </form>
+        <?php else: ?>
+        <span class="text-xs text-amber-800 shrink-0">Needs people_management.create to add</span>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($shells): ?>
+<div class="bg-gray-50 border border-gray-300 rounded-lg p-5 mb-6">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+            <h3 class="text-sm font-semibold text-gray-800 mb-1">
+                <i class="fas fa-ghost mr-1"></i>
+                <?= count($shells) ?> directory entr<?= count($shells) === 1 ? 'y has' : 'ies have' ?> no record behind any category
+            </h3>
+            <p class="text-xs text-gray-600 mb-2">
+                Left when a module record was deleted somewhere outside the onboarding flow — a restored
+                dump, or a deletion made before the directory was told about it. They still hold a Person
+                Code, so re-creating the employee or customer attaches to them rather than forking a
+                person. Removing them clears the page; it never touches module records or logins.
+            </p>
+            <p class="text-xs text-gray-700 font-mono">
+                <?= htmlspecialchars(implode(', ', array_map(fn($s) => $s['person_code'] . ' ' . trim($s['first_name'] . ' ' . (string) $s['last_name']), array_slice($shells, 0, 8))), ENT_QUOTES) ?><?= count($shells) > 8 ? ' +' . (count($shells) - 8) . ' more' : '' ?>
+            </p>
+        </div>
+        <?php if (hasPermission('people_management.delete')): ?>
+        <form method="POST" class="shrink-0">
+            <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+            <input type="hidden" name="action" value="prune_shells">
+            <button type="submit" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 text-sm whitespace-nowrap">
+                <i class="fas fa-broom mr-1"></i>Remove the empty entries
+            </button>
+        </form>
+        <?php else: ?>
+        <span class="text-xs text-gray-500 shrink-0">Needs people_management.delete to remove</span>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 
 <!-- ============================================================
@@ -847,6 +989,18 @@ $catColors = [
 
                             <div class="flex items-center">
 
+                                <?php
+                                // The photograph belongs to the employee or contractor
+                                // record, not to the directory row, so it is read from
+                                // there. Missing file falls back to the initials.
+                                $photo = peoplePhotoFromRow($person);
+                                $photoOk = $photo && is_file(dirname(__DIR__, 2) . '/' . ltrim($photo['path'], '/'));
+                                ?>
+                                <?php if ($photoOk): ?>
+                                    <img src="<?= attachmentFileUrl($photo['path']) ?>"
+                                         alt="<?= sanitize($personName) ?>" title="Photo from the <?= strtolower($photo['role'] === 'employee' ? 'employee' : 'contractor') ?> record"
+                                         class="h-10 w-10 rounded-full object-cover border">
+                                <?php else: ?>
                                 <div
                                     class="h-10 w-10
                                            rounded-full
@@ -856,9 +1010,11 @@ $catColors = [
                                            justify-center
                                            text-white
                                            font-bold
-                                           text-sm">
+                                           text-sm"
+                                    <?= $photo ? 'title="Photo is recorded but the file is not on this server"' : '' ?>>
                                     <?= htmlspecialchars($initials ?: '?', ENT_QUOTES, 'UTF-8') ?>
                                 </div>
+                                <?php endif; ?>
 
                                 <div class="ml-3">
 

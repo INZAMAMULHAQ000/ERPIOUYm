@@ -2,6 +2,7 @@
 $pageTitle = 'View Person';
 require_once '../../includes/header.php';
 require_once '../../helpers/people_onboarding.php';
+require_once '../../helpers/attachment_storage.php';
 require_once __DIR__ . '/../contractors/document_service.php';
 require_once __DIR__ . '/../contractors/contract_service.php';
 
@@ -63,10 +64,30 @@ $catColors = ['employee' => 'bg-blue-100 text-blue-800', 'customer' => 'bg-purpl
 
 // Every code this person holds, filtered by what the viewer is allowed to see.
 $codes = peopleIdentityCodes($db, $person);
+// The image itself belongs to the employee or contractor record; the directory
+// reads it rather than keeping a second copy that could disagree.
+$personPhoto = peoplePhotoFor($db, $person);
 $stateChip = ['complete' => 'bg-green-100 text-green-800', 'pending' => 'bg-amber-100 text-amber-800', 'declined' => 'bg-gray-100 text-gray-500'];
 ?>
 <div class="mb-6 flex justify-between items-center">
-    <div>
+    <div class="flex items-start gap-4">
+        <?php if ($personPhoto && $personPhoto['exists']): ?>
+            <button type="button" onclick="attachmentViewerOpen(this)"
+                    data-url="<?= attachmentFileUrl($personPhoto['path']) ?>"
+                    data-mime="<?= attachmentMimeFromPath($personPhoto['path']) ?>"
+                    data-name="Profile photo — <?= sanitize(trim($person['first_name'] . ' ' . (string) $person['last_name'])) ?>"
+                    class="shrink-0" title="Photo from the <?= strtolower($personPhoto['module']) ?> record — click to view">
+                <img src="<?= attachmentFileUrl($personPhoto['path']) ?>"
+                     alt="<?= sanitize(trim($person['first_name'] . ' ' . (string) $person['last_name'])) ?>"
+                     class="h-20 w-20 rounded-full object-cover border-2 border-white shadow">
+            </button>
+        <?php else: ?>
+            <div class="h-20 w-20 rounded-full bg-gray-700 text-white flex items-center justify-center text-2xl font-bold shrink-0"
+                 <?= $personPhoto ? 'title="A photo is recorded but the file is not on this server — the uploads/ folder is not part of the SQL dump"' : 'title="No profile photo on the employee or contractor record"' ?>>
+                <?= strtoupper(substr($person['first_name'], 0, 1)) ?><?= strtoupper(substr((string) $person['last_name'], 0, 1)) ?>
+            </div>
+        <?php endif; ?>
+        <div>
         <a href="index.php" class="text-blue-600 hover:text-blue-900 mb-2 inline-block">
             <i class="fas fa-arrow-left mr-1"></i>Back to People
         </a>
@@ -90,6 +111,7 @@ $stateChip = ['complete' => 'bg-green-100 text-green-800', 'pending' => 'bg-ambe
             <?php endforeach; ?>
             <span class="ml-2 text-sm">Code: <?= sanitize($person['person_code']) ?></span>
         </p>
+        </div>
     </div>
     <div class="flex gap-2">
         <?php if (hasPermission('people_management.edit')): ?>
@@ -445,4 +467,8 @@ $stateChip = ['complete' => 'bg-green-100 text-green-800', 'pending' => 'bg-ambe
     </div>
 </div>
 
-<?php require_once '../../includes/footer.php'; ?>
+<?php // Click-to-view modal for the profile photo, the same one HRMS and Contracts use.
+if ($personPhoto && $personPhoto['exists']) {
+    require __DIR__ . '/../../templates/document_viewer.php';
+}
+require_once '../../includes/footer.php'; ?>

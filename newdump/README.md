@@ -1,16 +1,19 @@
 # newdump/ — production database backup and schema reference
 
-Taken **2026-10-15 11:01** local from `erp_db`, after the identity-code work: every human in the
-system now carries one Person Code plus the code of each category they belong to, and the codes are
-shown together on every profile.
+Taken **2026-10-15 12:34** local from `erp_db`, after the identity-code work: every human in the
+system now carries one Person Code plus the code of each category they belong to, the codes are shown
+together on every profile, and the directory repairs itself when a module record goes away.
 
 | File | Size | Purpose |
 |---|---|---|
-| `erp_db_production_20261015_110152.sql` | 2,603 KB | **Use this.** Full schema + all data: 467 tables, 12,748 rows, 6,090 columns |
-| `erp_db_production_20261015_110152.sql.gz` | 297 KB | Same content compressed — use if the upload limit blocks the `.sql` |
+| `erp_db_production_20261015_123434.sql` | 2,580 KB | **Use this.** Full schema + all data: 467 tables, 12,544 rows, 6,090 columns |
+| `erp_db_production_20261015_123434.sql.gz` | 295 KB | Same content compressed — use if the upload limit blocks the `.sql` |
 | `DATABASE_STRUCTURE.md` | 558 KB | Full data dictionary: every table, every column, keys, defaults, FK targets, row counts |
 | `generate_structure.php` | | Regenerates `DATABASE_STRUCTURE.md` from the live database |
 | `SHA256SUMS.txt` | | checksums for the current dump, its `.gz`, this README, the dictionary and the generator |
+| `erp_db_production_20261015_122907.sql` (+`.gz`) | | Superseded — identical content, taken minutes earlier |
+| `erp_db_production_20261015_121454.sql` (+`.gz`) | | Superseded — before the profile photo was shown |
+| `erp_db_production_20261015_110152.sql` (+`.gz`) | | Superseded — before the drift-repair buttons |
 | `erp_db_production_20261015_085453.sql` (+`.gz`) | | Superseded — before the Person Code backfill |
 | `erp_db_production_20261014_165508.sql` (+`.gz`) | | Superseded — multi-role schema, before the Admin grants |
 | `erp_db_production_20261014_150855.sql` (+`.gz`) | | Superseded — taken before the multi-role work |
@@ -48,6 +51,15 @@ the Customer Master never touched the directory. Three things close that:
 
 `people_identity_audit.php` (CLI, blocked over HTTP by `.htaccess`) is the standing proof: 15 checks,
 exit 0 while the rule holds, exit 1 naming the offending records when it does not.
+
+**Drift goes both ways, and the list page now fixes both.** Deleting an employee, contractor or
+individual customer calls `peopleForfeitRecord()`: the person type is reopened rather than left
+claiming a record that is gone, and a directory entry whose last record has gone is removed with it
+(anything with a second category or a login account is kept). A record that exists with no directory
+entry — a restored dump, hand-edited SQL, or a person deleted from the directory — is shown on the
+People Management list with **Add them & repair stale rows**, and entries left with nothing behind
+them are shown with **Remove the empty entries**. Both are POST + CSRF, permission-gated, logged, and
+refuse to touch a row that still holds a record or a login.
 
 ## What this dump carries
 
@@ -104,8 +116,8 @@ Regenerate it any time — it reads `information_schema` only and writes nothing
 php newdump/generate_structure.php
 ```
 
-The dictionary describes the **live** database (469 tables, 6,119 columns, 12,757 rows) while the
-dump carries **467 / 6,090 / 12,748**. The difference is exactly the two local scratch tables below
+The dictionary describes the **live** database (469 tables, 6,119 columns, 12,553 rows) while the
+dump carries **467 / 6,090 / 12,544**. The difference is exactly the two local scratch tables below
 (29 columns, 9 rows), so the two documents reconcile rather than contradict. Re-run the generator
 after every migration and diff the output.
 
@@ -135,10 +147,10 @@ That guard is not decoration — an earlier run of it reported "0 compared, 0 mi
 like a clean pass, because `subprocess` had been handed `'-u root'` as one argument instead of two
 and MySQL was asked for a user named `" root"`, so every table list came back empty.
 
-- Restore exited `0` with a completely empty stderr; dump is 2,665,760 bytes.
+- Restore exited `0` with a completely empty stderr; dump is 2,641,959 bytes.
 - **467 / 467 tables**, identical in **both** directions; zero scratch tables in the restore; every
   source column present (anti-join = 0, restore carries 6,090 columns).
-- **467 row-count pairs compared individually — 0 mismatched tables, 12,748 source rows.**
+- **467 row-count pairs compared individually — 0 mismatched tables, 12,544 source rows.**
 - Structure of the new identity layer survived: `person_roles` with `UNIQUE (person_id, role)`, the
   FK reading `people on delete CASCADE`, `enum('pending','complete','declined')`, and
   `people.uq_people_email`.
@@ -180,6 +192,12 @@ the database references them verbatim, and `uploads/` is gitignored so a git dep
 ```bash
 scp -r uploads/ <user>@<prod>:/path/to/app/uploads/
 ```
+
+People Management shows that photo as the person's avatar on its list, profile and onboarding
+screens — it reads `employees.photo_path` or `contractors.photo_path` rather than keeping a second
+copy, so **the directory inherits the same breakage**: without this folder the avatar falls back to
+initials, with a tooltip saying a photo is recorded but the file is not on this server. That is
+deliberate — a broken image tag on every row of a people list is worse than an initial.
 
 ## Importing to production
 

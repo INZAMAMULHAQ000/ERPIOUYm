@@ -5,6 +5,7 @@ require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once '../../helpers/pagination.php';
 require_once __DIR__ . '/document_service.php';
+require_once '../../helpers/people_onboarding.php';
 
 if (!hasPermission('employees.view')) {
     die('Access Denied');
@@ -122,11 +123,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $deleteStmt->execute([$employeeId]);
             }
 
+            // The directory must stop claiming an employee that no longer
+            // exists, and a person who existed only for this record goes with it.
+            $directory = peopleForfeitRecord($db, 'employee', $employeeId);
+            $directoryNote = $directory['removed']
+                ? ' Their directory entry was removed with it.'
+                : ($directory['reopened'] ? ' Their directory entry stays, with the Employee step reopened.' : '');
+
             flash(
                 'success',
                 'Employee "' .
                     trim($employee['first_name'] . ' ' . $employee['last_name']) .
-                    '" deleted successfully.'
+                    '" deleted successfully.' . $directoryNote
             );
         } catch (PDOException $e) {
 

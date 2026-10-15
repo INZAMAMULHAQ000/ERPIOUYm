@@ -1,6 +1,6 @@
 # ERP database structure — `erp_db`
 
-Full data dictionary generated **2026-10-15 07:02:02** from the live database by
+Full data dictionary generated **2026-10-15 08:36:08** from the live database by
 `php newdump/generate_structure.php`. Read straight from `information_schema` — this file is never
 hand-maintained, so it always reflects the real schema.
 
@@ -8,7 +8,7 @@ hand-maintained, so it always reflects the real schema.
 |---|---|
 | Tables | **469** |
 | Columns | **6,119** |
-| Total rows | **12,757** |
+| Total rows | **12,553** |
 | Engine | InnoDB |
 | Character set | utf8mb4 |
 
@@ -19,16 +19,16 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | Domain | Tables | Rows | |
 |---|---:|---:|---|
 | [Contractor master (new)](#contractor-master-new) | 4 | 0 | **added by `2026_10_14_contractor_master.php`**|
-| [Employee & HR](#employee-hr) | 26 | 442 ||
-| [Finance & General Ledger](#finance-general-ledger) | 91 | 2,295 ||
+| [Employee & HR](#employee-hr) | 26 | 73 ||
+| [Finance & General Ledger](#finance-general-ledger) | 91 | 2,290 ||
 | [Procurement & Vendors](#procurement-vendors) | 34 | 2,366 ||
 | [Sales & CRM](#sales-crm) | 7 | 28 ||
-| [Projects & Tasks](#projects-tasks) | 14 | 164 ||
+| [Projects & Tasks](#projects-tasks) | 14 | 135 ||
 | [Inventory & Assets](#inventory-assets) | 12 | 29 ||
 | [Helpdesk](#helpdesk) | 9 | 35 ||
 | [AI module](#ai-module) | 217 | 2,988 ||
 | [Configuration & Lookups](#configuration-lookups) | 21 | 456 ||
-| [System & Security](#system-security) | 10 | 3,852 ||
+| [System & Security](#system-security) | 10 | 4,051 ||
 | [Other](#other) | 24 | 102 ||
 
 ## Table index
@@ -269,7 +269,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`ai_workspace_shared_agent_runs`](#ai-workspace-shared-agent-runs) | 7 | 2 | AI module |
 | [`app_settings`](#app-settings) | 9 | 8 | Configuration & Lookups |
 | [`assets`](#assets) | 16 | 9 | Finance & General Ledger |
-| [`asset_assignments`](#asset-assignments) | 11 | 5 | Finance & General Ledger |
+| [`asset_assignments`](#asset-assignments) | 11 | 0 | Finance & General Ledger |
 | [`asset_categories`](#asset-categories) | 6 | 9 | Finance & General Ledger |
 | [`asset_depreciation_schedules`](#asset-depreciation-schedules) | 12 | 0 | Finance & General Ledger |
 | [`asset_disposal`](#asset-disposal) | 12 | 0 | Finance & General Ledger |
@@ -280,8 +280,8 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`asset_returns`](#asset-returns) | 7 | 0 | Finance & General Ledger |
 | [`asset_transfers`](#asset-transfers) | 14 | 0 | Finance & General Ledger |
 | [`asset_transfer_history`](#asset-transfer-history) | 16 | 0 | Finance & General Ledger |
-| [`attendance`](#attendance) | 10 | 218 | Employee & HR |
-| [`audit_logs`](#audit-logs) | 6 | 2,336 | System & Security |
+| [`attendance`](#attendance) | 10 | 0 | Employee & HR |
+| [`audit_logs`](#audit-logs) | 6 | 2,543 | System & Security |
 | [`bank_accounts`](#bank-accounts) | 13 | 1 | Finance & General Ledger |
 | [`bank_reconciliation`](#bank-reconciliation) | 10 | 0 | Finance & General Ledger |
 | [`bank_reconciliation_items`](#bank-reconciliation-items) | 7 | 0 | Finance & General Ledger |
@@ -330,7 +330,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`depreciation_methods`](#depreciation-methods) | 6 | 6 | Finance & General Ledger |
 | [`designations`](#designations) | 7 | 10 | Employee & HR |
 | [`document_sequences`](#document-sequences) | 11 | 47 | Configuration & Lookups |
-| [`employees`](#employees) | 32 | 14 | Employee & HR |
+| [`employees`](#employees) | 32 | 1 | Employee & HR |
 | [`employee_documents`](#employee-documents) | 9 | 3 | Employee & HR |
 | [`employee_expense_claims`](#employee-expense-claims) | 19 | 0 | Employee & HR |
 | [`exchange_rates`](#exchange-rates) | 7 | 6 | Other |
@@ -380,8 +380,8 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`knowledge_base_categories`](#knowledge-base-categories) | 8 | 5 | Helpdesk |
 | [`leads`](#leads) | 15 | 8 | Sales & CRM |
 | [`lead_followups`](#lead-followups) | 9 | 0 | Other |
-| [`leave_balances`](#leave-balances) | 8 | 60 | Employee & HR |
-| [`leave_requests`](#leave-requests) | 15 | 7 | Employee & HR |
+| [`leave_balances`](#leave-balances) | 8 | 0 | Employee & HR |
+| [`leave_requests`](#leave-requests) | 15 | 0 | Employee & HR |
 | [`leave_types`](#leave-types) | 9 | 6 | Employee & HR |
 | [`license_assignments`](#license-assignments) | 5 | 0 | Other |
 | [`locations`](#locations) | 10 | 1 | Other |
@@ -398,14 +398,14 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`payroll_payment_batches`](#payroll-payment-batches) | 9 | 1 | Employee & HR |
 | [`payroll_reconciliation`](#payroll-reconciliation) | 9 | 1 | Employee & HR |
 | [`payroll_runs`](#payroll-runs) | 20 | 3 | Employee & HR |
-| [`people`](#people) | 18 | 15 | Employee & HR |
+| [`people`](#people) | 18 | 3 | Employee & HR |
 | [`period_checklist_items`](#period-checklist-items) | 12 | 28 | Finance & General Ledger |
 | [`period_checklist_templates`](#period-checklist-templates) | 7 | 70 | Finance & General Ledger |
 | [`period_close_audit`](#period-close-audit) | 10 | 1,503 | Finance & General Ledger |
 | [`period_close_settings`](#period-close-settings) | 9 | 1 | Finance & General Ledger |
 | [`period_opening_balances`](#period-opening-balances) | 8 | 0 | Finance & General Ledger |
 | [`permissions`](#permissions) | 5 | 517 | System & Security |
-| [`person_roles`](#person-roles) | 8 | 15 | System & Security |
+| [`person_roles`](#person-roles) | 8 | 5 | System & Security |
 | [`petty_cash_funds`](#petty-cash-funds) | 9 | 0 | Finance & General Ledger |
 | [`petty_cash_transactions`](#petty-cash-transactions) | 10 | 0 | Finance & General Ledger |
 | [`po_receiving_summary`](#po-receiving-summary) | 11 | 0 | Other |
@@ -415,7 +415,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`procurement_sequences`](#procurement-sequences) | 4 | 5 | Procurement & Vendors |
 | [`procurement_settings`](#procurement-settings) | 3 | 14 | Procurement & Vendors |
 | [`projects`](#projects) | 13 | 10 | Projects & Tasks |
-| [`project_members`](#project-members) | 5 | 17 | Projects & Tasks |
+| [`project_members`](#project-members) | 5 | 0 | Projects & Tasks |
 | [`purchase_orders`](#purchase-orders) | 52 | 29 | Procurement & Vendors |
 | [`purchase_order_approvals`](#purchase-order-approvals) | 8 | 27 | Procurement & Vendors |
 | [`purchase_order_attachments`](#purchase-order-attachments) | 8 | 0 | Procurement & Vendors |
@@ -454,7 +454,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`software_licenses`](#software-licenses) | 12 | 5 | Other |
 | [`tasks`](#tasks) | 14 | 13 | Projects & Tasks |
 | [`task_activities`](#task-activities) | 8 | 11 | Projects & Tasks |
-| [`task_assignees`](#task-assignees) | 4 | 12 | Projects & Tasks |
+| [`task_assignees`](#task-assignees) | 4 | 0 | Projects & Tasks |
 | [`task_attachments`](#task-attachments) | 8 | 0 | Projects & Tasks |
 | [`task_comments`](#task-comments) | 5 | 11 | Projects & Tasks |
 | [`task_subtasks`](#task-subtasks) | 7 | 16 | Projects & Tasks |
@@ -484,12 +484,12 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`ticket_categories`](#ticket-categories) | 8 | 8 | Helpdesk |
 | [`ticket_internal_notes`](#ticket-internal-notes) | 7 | 0 | Helpdesk |
 | [`ticket_replies`](#ticket-replies) | 7 | 8 | Helpdesk |
-| [`timesheets`](#timesheets) | 9 | 59 | Employee & HR |
+| [`timesheets`](#timesheets) | 9 | 0 | Employee & HR |
 | [`units_of_measure`](#units-of-measure) | 6 | 12 | Other |
-| [`users`](#users) | 11 | 14 | System & Security |
+| [`users`](#users) | 11 | 15 | System & Security |
 | [`user_companies`](#user-companies) | 2 | 15 | Configuration & Lookups |
 | [`user_dashboard_layouts`](#user-dashboard-layouts) | 7 | 0 | Other |
-| [`user_roles`](#user-roles) | 2 | 14 | System & Security |
+| [`user_roles`](#user-roles) | 2 | 15 | System & Security |
 | [`vendors`](#vendors) | 17 | 26 | Procurement & Vendors |
 | [`vendor_bills`](#vendor-bills) | 37 | 2 | Procurement & Vendors |
 | [`vendor_bill_approvals`](#vendor-bill-approvals) | 9 | 1 | Procurement & Vendors |
@@ -808,7 +808,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### attendance
 
-10 columns · 218 rows
+10 columns · 0 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -853,7 +853,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### employees
 
-32 columns · 14 rows
+32 columns · 1 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -948,7 +948,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### leave_balances
 
-8 columns · 60 rows
+8 columns · 0 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -963,7 +963,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### leave_requests
 
-15 columns · 7 rows
+15 columns · 0 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -1106,7 +1106,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### people
 
-18 columns · 15 rows
+18 columns · 3 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -1131,7 +1131,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### timesheets
 
-9 columns · 59 rows
+9 columns · 0 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -1217,7 +1217,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### asset_assignments
 
-11 columns · 5 rows
+11 columns · 0 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -3959,7 +3959,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### project_members
 
-5 columns · 17 rows
+5 columns · 0 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -4007,7 +4007,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### task_assignees
 
-4 columns · 12 rows
+4 columns · 0 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -9391,7 +9391,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### audit_logs
 
-6 columns · 2,336 rows
+6 columns · 2,543 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -9432,7 +9432,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### person_roles
 
-8 columns · 15 rows
+8 columns · 5 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -9504,7 +9504,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### users
 
-11 columns · 14 rows
+11 columns · 15 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -9522,7 +9522,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### user_roles
 
-2 columns · 14 rows
+2 columns · 15 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|

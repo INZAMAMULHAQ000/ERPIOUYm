@@ -3,6 +3,7 @@ $pageTitle = 'Person Onboarding';
 require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once '../../helpers/people_onboarding.php';
+require_once '../../helpers/attachment_storage.php';
 
 if (!hasPermission('people_management.view')) {
     die('Access Denied');
@@ -148,7 +149,14 @@ $csrf = csrfToken();
 ?>
 
 <div class="mb-6 flex justify-between items-center">
-    <div>
+    <div class="flex items-start gap-4">
+        <?php $photo = peoplePhotoFor($db, $person); ?>
+        <?php if ($photo && $photo['exists']): ?>
+            <img src="<?= attachmentFileUrl($photo['path']) ?>" alt="<?= sanitize($person['first_name']) ?>"
+                 title="Photo from the <?= strtolower($photo['module']) ?> record"
+                 class="h-14 w-14 rounded-full object-cover border shrink-0">
+        <?php endif; ?>
+        <div>
         <a href="index.php" class="text-blue-600 hover:text-blue-900 inline-block mb-1">
             <i class="fas fa-arrow-left mr-1"></i>Back to People
         </a>
@@ -158,6 +166,7 @@ $csrf = csrfToken();
             &middot; <?= sanitize($person['email'] ?: 'no email') ?>
             <?php if ($person['phone']): ?>&middot; <?= sanitize($person['phone']) ?><?php endif; ?>
         </p>
+        </div>
     </div>
     <a href="view.php?id=<?= $personId ?>" class="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200">
         <i class="fas fa-id-card mr-1"></i>Person Profile

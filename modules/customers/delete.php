@@ -3,6 +3,7 @@ $isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
 $pageTitle = 'Delete Customer';
 require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
+require_once '../../helpers/people_onboarding.php';
 
 if (!hasPermission('customers.delete')) { die('Access Denied'); }
 
@@ -36,8 +37,13 @@ if ($isPost) {
     }
     $db->prepare("UPDATE clients SET deleted_at = NOW(), status = 'archived', updated_by = ? WHERE id = ?")
        ->execute([$_SESSION['user_id'], $id]);
+    // An individual customer who was in the directory only for this record is
+    // removed with it; a multi-category person keeps its reopened step.
+    $directory = peopleForfeitRecord($db, 'customer', $id);
+    $directoryNote = $directory['removed'] ? ' Their directory entry was removed with it.'
+        : ($directory['reopened'] ? ' Their directory entry stays, with the Customer step reopened.' : '');
     logAudit($_SESSION['user_id'], 'Deleted customer: ' . $c['company_name'] . " (#{$id})", 'customers');
-    flash('deleted', 'Customer deleted. Historical transactions were preserved.', 'success');
+    flash('deleted', 'Customer deleted. Historical transactions were preserved.' . $directoryNote, 'success');
     to('modules/customers/index.php');
 }
 ?>

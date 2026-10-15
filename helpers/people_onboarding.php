@@ -123,8 +123,13 @@ function peopleNormaliseRoles($roles)
 
 /**
  * One query for the list page: person_id => [role => status].
- * Deliberately does not reconcile — that needs per-row existence checks and
- * would cost three queries per person on a page of fifteen.
+ *
+ * The joins exist to keep the list honest. `person_roles` can claim a role is
+ * complete while the record behind it has been deleted from its own module —
+ * the FK nulls people.employee_id and the CLI auditor reports it, but a table of
+ * people must not display a relationship that no longer exists. So a claimed
+ * complete row whose record is gone is shown as pending, which is the truth and
+ * also what makes the row's "Continue onboarding" link meaningful.
  */
 function peopleRoleSummary($db, array $personIds)
 {
@@ -132,7 +137,20 @@ function peopleRoleSummary($db, array $personIds)
         return [];
     }
     $in = implode(',', array_fill(0, count($personIds), '?'));
-    $stmt = $db->prepare("SELECT person_id, role, status FROM person_roles WHERE person_id IN ($in)");
+    $stmt = $db->prepare("
+        SELECT pr.person_id, pr.role,
+               CASE
+                 WHEN pr.status <> 'complete' THEN pr.status
+                 WHEN pr.role = 'employee'   AND e.id IS NULL THEN 'pending'
+                 WHEN pr.role = 'customer'   AND cl.id IS NULL THEN 'pending'
+                 WHEN pr.role = 'contractor' AND ct.id IS NULL THEN 'pending'
+                 ELSE 'complete'
+               END AS status
+        FROM person_roles pr
+        LEFT JOIN employees e       ON pr.role = 'employee'   AND e.id  = pr.record_id
+        LEFT JOIN clients cl        ON pr.role = 'customer'   AND cl.id = pr.record_id AND cl.deleted_at IS NULL
+        LEFT JOIN contractors ct    ON pr.role = 'contractor' AND ct.id = pr.record_id AND ct.deleted_at IS NULL
+        WHERE pr.person_id IN ($in)");
     $stmt->execute(array_values($personIds));
     $summary = [];
     foreach ($stmt->fetchAll() as $row) {
@@ -824,4 +842,296 @@ function peopleOnboardingReturnPending($personId)
 function peopleOnboardingClearReturn()
 {
     unset($_SESSION['people_onboarding_return']);
+}
+/**
+ * A module record has just been deleted. Make the directory tell the truth.
+ *
+ * The FK is ON DELETE SET NULL, so `people.employee_id` goes back to NULL by
+ * itself — but `person_roles` still claims the role is complete and points at a
+ * record that no longer exists. Until that is corrected the directory advertises
+ * a relationship it cannot show, which is worse than an empty one.
+ *
+ * A person left with no record in any category and no login account is a shell:
+ * it exists only to represent the record that has just gone, so it is removed
+ * too, with the reason in the audit log. Anything that still holds a login, or a
+ * second category, is kept and its reopened step is left for someone to finish.
+ */
+function peopleForfeitRecord($db, $role, $recordId)
+{
+    $def = peopleRoleDefinition($role);
+    if ($def === null) {
+        return ['reopened' => 0, 'removed' => 0];
+    }
+
+    $stmt = $db->prepare("SELECT person_id FROM person_roles WHERE role = ? AND record_id = ?");
+    $stmt->execute([$role, (int) $recordId]);
+    $personIds = array_column($stmt->fetchAll(), 'person_id');
+
+    $reopened = 0;
+    $removed = 0;
+
+    try {
+        $db->beginTransaction();
+
+        // The stale claim goes first, whatever happens to the row afterwards.
+        $db->prepare("UPDATE person_roles SET status = 'pending', record_id = NULL, completed_at = NULL
+                      WHERE role = ? AND record_id = ?")->execute([$role, (int) $recordId]);
+
+        foreach ($personIds as $personId) {
+            $personId = (int) $personId;
+            $live = 0;
+            foreach (peopleRoleDefinitions() as $otherRole => $otherDef) {
+                $row = $db->prepare("SELECT `{$otherDef['link_column']}` FROM people WHERE id = ? LIMIT 1");
+                $row->execute([$personId]);
+                if ($row->fetchColumn()) {
+                    $live++;
+                }
+            }
+            $detail = $db->prepare("SELECT person_code, first_name, last_name, user_id FROM people WHERE id = ? LIMIT 1");
+            $detail->execute([$personId]);
+            $person = $detail->fetch();
+            if (!$person) {
+                continue;
+            }
+
+            if ($live === 0 && empty($person['user_id'])) {
+                $db->prepare("DELETE FROM people WHERE id = ?")->execute([$personId]);
+                logAudit($_SESSION['user_id'] ?? null,
+                    'Removed ' . $person['person_code'] . ' — its last ' . strtolower($def['label'])
+                    . ' record #' . (int) $recordId . ' was deleted', 'people_management');
+                $removed++;
+                continue;
+            }
+
+            // Still something to come back for: say so on the person, not just in a log.
+            logAudit($_SESSION['user_id'] ?? null,
+                $person['person_code'] . ' lost its ' . strtolower($def['label'])
+                . ' record #' . (int) $recordId . ' — step reopened', 'people_management');
+            $reopened++;
+        }
+
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('peopleForfeitRecord failed: ' . $e->getMessage());
+    }
+
+    return ['reopened' => $reopened, 'removed' => $removed];
+}
+
+/**
+ * Records that exist in a module but have no directory entry.
+ *
+ * People Management is the assembly point: an employee, contractor or individual
+ * customer that nobody can find in the directory is a gap in it, so the list page
+ * shows the count and offers to close it rather than leaving the CLI auditor as
+ * the only way to discover the difference.
+ */
+function peopleUnlistedRecords($db)
+{
+    $found = [];
+    foreach (peopleRoleDefinitions() as $role => $def) {
+        $deleted = !empty($def['deleted_column']) ? "AND c.`{$def['deleted_column']}` IS NULL" : '';
+        $individual = ($role === 'customer') ? "AND c.customer_type = 'individual'" : '';
+        // The customer master has no first/last name columns, so the display
+        // name comes from a different place per module.
+        $name = ($def['identity_mode'] ?? '') === 'split_name'
+            ? "CONCAT_WS(' ', c.first_name, c.last_name)"
+            : 'c.company_name';
+        $rows = $db->query("SELECT c.id, c.`{$def['code_column']}` AS code, $name AS nm
+                            FROM `{$def['table']}` c
+                            LEFT JOIN people p ON p.`{$def['link_column']}` = c.id
+                            WHERE p.id IS NULL $deleted $individual
+                            ORDER BY 2")->fetchAll();
+        foreach ($rows as $r) {
+            $found[] = ['role' => $role, 'id' => (int) $r['id'], 'code' => $r['code'], 'name' => trim((string) $r['nm'])];
+        }
+    }
+    return $found;
+}
+
+/**
+ * Put every unlisted record into the directory through the normal path.
+ *
+ * This is the same decision the save hook makes — reuse a person matched on
+ * email, otherwise mint a Person Code — so a click on the list page cannot
+ * create an identity that the modules would not have created themselves.
+ */
+function peopleSyncDirectory($db)
+{
+    $tallies = ['created' => 0, 'attached' => 0, 'already' => 0, 'skipped' => 0, 'conflict' => 0, 'failed' => 0];
+    $notes = [];
+    foreach (peopleUnlistedRecords($db) as $record) {
+        $result = peopleEnsurePersonForRecord($db, $record['role'], $record['id']);
+        $action = $result['action'];
+        $tallies[$action] = ($tallies[$action] ?? 0) + 1;
+        if ($action === 'conflict' || $action === 'failed') {
+            $notes[] = $record['code'] . ': ' . $result['message'];
+        }
+    }
+    return ['tallies' => $tallies, 'notes' => $notes];
+}
+
+/**
+ * Directory entries with nothing behind them: no employee, no customer, no
+ * contractor, and no login account.
+ *
+ * These are what a module deletion leaves if it happens without
+ * peopleForfeitRecord() — restored dumps, hand-edited SQL, deletes made before
+ * this existed. The person is not wrong, but with nothing to represent it is
+ * noise on the page that is supposed to be the assembled view of everyone.
+ */
+function peopleShellPeople($db)
+{
+    return $db->query("SELECT id, person_code, first_name, last_name, email, created_at
+                       FROM people
+                       WHERE employee_id IS NULL AND customer_id IS NULL AND contractor_id IS NULL
+                         AND user_id IS NULL
+                       ORDER BY first_name, id")->fetchAll();
+}
+
+/**
+ * Remove shell entries, reporting what was dropped.
+ *
+ * Deliberately refuses anything that still holds a link or a login account, so
+ * this can never take a real person out of the directory: it clears rows that no
+ * longer describe anything. The cascade on person_roles handles their role rows.
+ */
+function peoplePruneShells($db)
+{
+    $removed = [];
+    $stmt = $db->prepare("SELECT id, person_code, first_name, last_name FROM people
+                          WHERE employee_id IS NULL AND customer_id IS NULL
+                            AND contractor_id IS NULL AND user_id IS NULL");
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    foreach ($rows as $row) {
+        try {
+            $db->beginTransaction();
+            // Re-check under the transaction: a save in another tab may have
+            // linked this person between the list and the delete.
+            $guard = $db->prepare("SELECT id FROM people WHERE id = ?
+                                   AND employee_id IS NULL AND customer_id IS NULL
+                                   AND contractor_id IS NULL AND user_id IS NULL");
+            $guard->execute([(int) $row['id']]);
+            if (!$guard->fetch()) {
+                $db->rollBack();
+                continue;
+            }
+            $db->prepare("DELETE FROM people WHERE id = ?")->execute([(int) $row['id']]);
+            $db->commit();
+            $removed[] = $row['person_code'];
+            logAudit($_SESSION['user_id'] ?? null,
+                'Removed ' . $row['person_code'] . ' (' . trim($row['first_name'] . ' ' . (string) $row['last_name'])
+                . ') — no record in any category', 'people_management');
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+        }
+    }
+    return $removed;
+}
+
+/**
+ * Persist the truth the list already derives: a role marked complete whose record
+ * no longer exists is an open step, not a finished one.
+ *
+ * Non-destructive. Nothing is removed and no person is touched — only the stale
+ * claim is corrected, so the audit, the profile and the tiles stop disagreeing
+ * with each other. This is the same repair peopleLoad() performs when someone
+ * opens a person; this does it for every person at once.
+ */
+function peopleReconcileRoles($db)
+{
+    $repaired = [];
+    foreach (peopleRoleDefinitions() as $role => $def) {
+        $deleted = !empty($def['deleted_column']) ? "AND r.`{$def['deleted_column']}` IS NULL" : '';
+        $stmt = $db->prepare("SELECT pr.id, pr.person_id, p.person_code
+                               FROM person_roles pr
+                               JOIN people p ON p.id = pr.person_id
+                               LEFT JOIN `{$def['table']}` r ON r.id = pr.record_id $deleted
+                               WHERE pr.role = ? AND pr.status = 'complete' AND r.id IS NULL");
+        $stmt->execute([$role]);
+        $rows = $stmt->fetchAll();
+        if (!$rows) {
+            continue;
+        }
+        $db->prepare("UPDATE person_roles SET status = 'pending', record_id = NULL, completed_at = NULL
+                      WHERE role = ? AND status = 'complete'
+                        AND (record_id IS NULL OR record_id NOT IN (SELECT id FROM `{$def['table']}` WHERE 1 $deleted))")
+           ->execute([$role]);
+        foreach ($rows as $row) {
+            $repaired[] = $row['person_code'] . '/' . $role;
+        }
+    }
+    if ($repaired) {
+        logAudit($_SESSION['user_id'] ?? null,
+            'Reconciled ' . count($repaired) . ' stale person-type row(s) after record deletions', 'people_management');
+    }
+    return $repaired;
+}
+
+/**
+ * The photograph of a person, wherever it is kept.
+ *
+ * `people` has no photo column by design: the passport-size image is uploaded
+ * and owned by the module that verifies identity — HRMS for an employee, the
+ * contractor register for a contractor. So a directory page reads the photo from
+ * the linked record instead of collecting a second copy that would drift.
+ *
+ * Returns null when nobody has uploaded one, which is what the initials avatar
+ * is for. `exists` is checked on disk as well, because the uploaded files live
+ * outside the database: restoring only the SQL leaves every path pointing at
+ * nothing, and a broken image tag is worse than an honest initial.
+ */
+function peoplePhotoFor($db, $person)
+{
+    foreach (['employee', 'contractor'] as $role) {
+        $def = peopleRoleDefinition($role);
+        $recordId = !empty($person[$def['link_column']]) ? (int) $person[$def['link_column']] : 0;
+        if ($recordId <= 0) {
+            continue;
+        }
+        $stmt = $db->prepare("SELECT photo_path FROM `{$def['table']}` WHERE id = ? LIMIT 1");
+        $stmt->execute([$recordId]);
+        $path = $stmt->fetchColumn();
+        if (!$path) {
+            continue;
+        }
+        $path = (string) $path;
+        return [
+            'path'   => $path,
+            'role'   => $role,
+            'module' => $def['module'],
+            'record' => $recordId,
+            'code'   => $def['code_column'],
+            'exists' => is_file(dirname(__DIR__) . '/' . ltrim($path, '/')),
+        ];
+    }
+    return null;
+}
+
+/**
+ * Photo paths for a whole page of people, in the list query itself.
+ *
+ * One lookup per row would be fifteen stat calls plus fifteen queries for a page
+ * that is meant to be scanned, so the list selects both columns and this picks
+ * the same way peoplePhotoFor() does: employee first, contractor second.
+ */
+function peoplePhotoFromRow(array $row)
+{
+    if (!empty($row['employee_photo'])) {
+        $role = 'employee';
+        $path = $row['employee_photo'];
+    } elseif (!empty($row['contractor_photo'])) {
+        $role = 'contractor';
+        $path = $row['contractor_photo'];
+    } else {
+        return null;
+    }
+    return ['role' => $role, 'path' => $path];
 }

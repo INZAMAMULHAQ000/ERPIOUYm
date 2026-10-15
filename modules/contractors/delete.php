@@ -5,6 +5,7 @@ require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once __DIR__ . '/document_service.php';
 require_once __DIR__ . '/contract_service.php';
+require_once '../../helpers/people_onboarding.php';
 
 if (!hasPermission('contractors.delete')) {
     die('Access Denied');
@@ -55,13 +56,14 @@ if ($isPost) {
     $db->prepare("UPDATE contractors SET status = 'terminated', deleted_at = NOW(), updated_by = ?, termination_date = COALESCE(termination_date, CURDATE()), termination_reason = COALESCE(termination_reason, 'Removed from register') WHERE id = ?")
        ->execute([$_SESSION['user_id'], $id]);
 
-    // A directory entry that only existed to hold this contractor goes with it.
-    if ($peopleLinks > 0) {
-        $db->prepare("UPDATE people SET contractor_id = NULL WHERE contractor_id = ?")->execute([$id]);
-    }
+    // A directory entry that only existed to hold this contractor goes with it;
+    // one that still holds another category keeps its reopened step.
+    $directory = peopleForfeitRecord($db, 'contractor', $id);
+    $directoryNote = $directory['removed'] ? ' Their directory entry was removed with it.'
+        : ($directory['reopened'] ? ' Their directory entry stays, with the Contractor step reopened.' : '');
 
     logAudit($_SESSION['user_id'], 'Deleted contractor: ' . trim($c['first_name'] . ' ' . $c['last_name']) . " (#$id)", 'contractors');
-    flash('deleted', 'Contractor removed from the register. Contracts and documents were preserved for audit.', 'success');
+    flash('deleted', 'Contractor removed from the register. Contracts and documents were preserved for audit.' . $directoryNote, 'success');
     to('modules/contractors/index.php');
 }
 

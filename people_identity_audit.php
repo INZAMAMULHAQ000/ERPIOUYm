@@ -66,7 +66,7 @@ foreach ($definitions as $role => $def) {
     }
     foreach ($rows as $r) {
         $report('missing-person/' . $role . '/' . $r['code'],
-            $def['label'] . ' #' . $r['id'] . ' (' . $r['code'] . ') has no directory entry');
+            $def['label'] . ' #' . $r['id'] . ' (' . $r['code'] . ') has no directory entry — People Management offers to add it');
     }
 }
 
@@ -104,7 +104,7 @@ foreach ($definitions as $role => $def) {
                          AND (p.`{$def['link_column']}` IS NULL OR r.id IS NULL $deleted)", [$role]);
     foreach ($stale as $s) {
         $report('complete-without-record/' . $role . '/' . $s['person_code'],
-            'marked complete but its ' . strtolower($def['label']) . ' record is gone (run peopleLoad or reopen the step)');
+            'marked complete but its ' . strtolower($def['label']) . ' record is gone — use Sync & repair on the People Management list');
     }
 
     $mismatch = ids($db, "SELECT pr.id, pr.person_id, pr.record_id, p.`{$def['link_column']}` AS link_id
