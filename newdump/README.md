@@ -1,20 +1,53 @@
 # newdump/ — production database backup and schema reference
 
-Taken **2026-10-15 08:54** local from `erp_db`. This is the production-ready pairing of the People
-Management multi-role redesign with the access and security hardening pass that followed it.
+Taken **2026-10-15 11:01** local from `erp_db`, after the identity-code work: every human in the
+system now carries one Person Code plus the code of each category they belong to, and the codes are
+shown together on every profile.
 
 | File | Size | Purpose |
 |---|---|---|
-| `erp_db_production_20261015_085453.sql` | 2,582 KB | **Use this.** Full schema + all data: 467 tables, 12,533 rows, 6,090 columns |
-| `erp_db_production_20261015_085453.sql.gz` | 294 KB | Same content compressed — use if the upload limit blocks the `.sql` |
+| `erp_db_production_20261015_110152.sql` | 2,603 KB | **Use this.** Full schema + all data: 467 tables, 12,748 rows, 6,090 columns |
+| `erp_db_production_20261015_110152.sql.gz` | 297 KB | Same content compressed — use if the upload limit blocks the `.sql` |
 | `DATABASE_STRUCTURE.md` | 558 KB | Full data dictionary: every table, every column, keys, defaults, FK targets, row counts |
 | `generate_structure.php` | | Regenerates `DATABASE_STRUCTURE.md` from the live database |
 | `SHA256SUMS.txt` | | checksums for the current dump, its `.gz`, this README, the dictionary and the generator |
+| `erp_db_production_20261015_085453.sql` (+`.gz`) | | Superseded — before the Person Code backfill |
 | `erp_db_production_20261014_165508.sql` (+`.gz`) | | Superseded — multi-role schema, before the Admin grants |
 | `erp_db_production_20261014_150855.sql` (+`.gz`) | | Superseded — taken before the multi-role work |
 | `erp_db_production_20261014_100252.sql` (+`.gz`) | | Superseded — taken before the contract-terms work |
 | `erp_db_production_20261013_163751.sql` (+`.gz`) | | Superseded — before the contractor module |
 | `erp_db_production_20261013_110452.sql` (+`.gz`) | | Superseded — before the employee identification work |
+
+## The identity rule this snapshot satisfies
+
+> Every human in the system has exactly one directory entry — one **Person Code** — and one code per
+> category they belong to: **Employee Code**, **Contractor Code**, **Customer Code**, all linked to
+> that one entry.
+
+`people` already held four independent nullable links, so the model needed no new columns for this;
+what it needed was coverage and visibility. Before this snapshot **12 of 14 employees and the one
+individual customer had no Person Code at all**, because records created inside HRMS, Contracts or
+the Customer Master never touched the directory. Three things close that:
+
+1. **Backfill** — `config/migrations/2026_10_15_person_code_coverage.php` minted the 13 missing
+   entries, merging on email so one human with an employee row and a customer row becomes one person
+   holding both codes. Organisations are deliberately not minted: a `clients` row is a person only
+   when `customer_type = 'individual'`, so the directory does not become a mirror of the customer
+   master. Dry-run by default, `--apply` to write, idempotent, and its own closing check exits 1 if
+   any record is still uncovered.
+2. **Auto-mint on save** — `peopleEnsurePersonForRecord()` in `helpers/people_onboarding.php`: an
+   employee, contractor or individual customer created directly in its own module now issues or
+   reuses a Person Code, and a later wizard run for that email reuses the person instead of forking
+   one.
+3. **One numbering rule** — `peopleNextPersonCode()` and `nextUniqueDocumentNumber()`. Person and
+   Employee codes are read past their prefix instead of as a fixed last four characters (the old read
+   would have truncated the series at 9,999), and every allocated number is re-checked against the
+   column it is going into. That matters because `clients.client_code` and `contractors.contractor_code`
+   are unique database-wide while `document_sequences` counts per company, so a second company could
+   previously hand out a code that already existed and the insert died in front of the user.
+
+`people_identity_audit.php` (CLI, blocked over HTTP by `.htaccess`) is the standing proof: 15 checks,
+exit 0 while the rule holds, exit 1 naming the offending records when it does not.
 
 ## What this dump carries
 
@@ -71,8 +104,8 @@ Regenerate it any time — it reads `information_schema` only and writes nothing
 php newdump/generate_structure.php
 ```
 
-The dictionary describes the **live** database (469 tables, 6,119 columns, 12,542 rows) while the
-dump carries **467 / 6,090 / 12,533**. The difference is exactly the two local scratch tables below
+The dictionary describes the **live** database (469 tables, 6,119 columns, 12,757 rows) while the
+dump carries **467 / 6,090 / 12,748**. The difference is exactly the two local scratch tables below
 (29 columns, 9 rows), so the two documents reconcile rather than contradict. Re-run the generator
 after every migration and diff the output.
 
@@ -93,27 +126,32 @@ mysqldump -u root --single-transaction --quick --routines --triggers --events \
 
 `--single-transaction` gives a consistent InnoDB snapshot without locking the running app.
 
-## Verification actually performed (19 checks, 0 failures)
+## Verification actually performed (27 checks, 0 failures)
 
-Not just written — restored into a scratch database (`erp_db_verify`) and compared with the live one:
+Not just written — restored into a scratch database (`erp_db_verify`) and compared with the live one.
+The row comparison is the point of the exercise, so it is the part designed not to lie: the harness
+prints how many pairs it actually compared and **aborts if that number is below the table count**.
+That guard is not decoration — an earlier run of it reported "0 compared, 0 mismatched" and looked
+like a clean pass, because `subprocess` had been handed `'-u root'` as one argument instead of two
+and MySQL was asked for a user named `" root"`, so every table list came back empty.
 
-- Restore exited `0` with a completely empty stderr.
-- **467 / 467 tables**; table sets identical in **both** directions (nothing missing, nothing extra);
-  zero scratch tables in the restore.
-- **Per-table row counts compared individually: 467 pairs, 0 mismatched tables, 12,514 source rows vs
-  12,514 restored.** The harness prints how many pairs it actually compared and aborts if that number
-  is below the table count. That guard is not decorative: the first run of this suite reported
-  "0 compared, 0 mismatched" and looked like a clean pass because `subprocess` had been handed
-  `'-u root'` as one argument instead of two, so MySQL was asked for a user named `" root"` and every
-  table list came back empty. Fixed, then re-run.
-- Every source column present in the restored schema (anti-join = 0; restore carries 6,090 columns).
-- The new structures survived: `person_roles` 8 columns / 2 rows, `UNIQUE (person_id, role)`, the FK
-  reading `people on delete CASCADE` in `information_schema.referential_constraints`, the
-  `enum('pending','complete','declined')` status, and `people.uq_people_email`.
-- `people` rows identical by ID, category and `employee_id` (`4:employee:17, 5:employee:18`).
-- gzip `gzip -t` clean and byte-identical when decompressed; `person_roles` present in the dump text
-  as both DDL and data.
-- Scratch database dropped afterwards.
+- Restore exited `0` with a completely empty stderr; dump is 2,665,760 bytes.
+- **467 / 467 tables**, identical in **both** directions; zero scratch tables in the restore; every
+  source column present (anti-join = 0, restore carries 6,090 columns).
+- **467 row-count pairs compared individually — 0 mismatched tables, 12,748 source rows.**
+- Structure of the new identity layer survived: `person_roles` with `UNIQUE (person_id, role)`, the
+  FK reading `people on delete CASCADE`, `enum('pending','complete','declined')`, and
+  `people.uq_people_email`.
+- Content survived byte-for-byte in meaning: MD5 over `people(id, person_code, category,
+  employee_id, customer_id, contractor_id)`, over `person_roles(person_id, role, status, record_id)`,
+  over `employees(id, employee_code, email)` and over `clients(id, client_code, customer_type)` —
+  each identical between live and restored.
+- **The invariant itself was re-tested inside the restored copy**: 0 employees without a Person Code,
+  0 individual customers without one, 0 people with a blank or duplicate Person Code, 15 people and
+  15 role rows.
+- Harness self-test passes: a deliberately wrong pair is reported as DIFF, so the suite can fail.
+- gzip `gzip -t` clean and byte-identical when decompressed; `person_roles` present as both DDL and
+  data. Scratch database dropped afterwards.
 
 The source has no stored procedures, functions, triggers, views or events, so their absence is
 accuracy rather than loss.
@@ -180,9 +218,23 @@ read `person_roles` unconditionally and will fatal without it.
 5. **Assign companies.** Non-Super-Admin users need `user_companies` rows or they see no company
    at all; role id 1 bypasses that check, everyone else does not. Contractor contracts are stamped
    with the active company and numbering (`CTR…`, `CTRT-…`) is per company — check the counters
-   under Configuration → Document Numbering before the first live entry. Admins now hold
-   `people_management.view/create/edit` from this dump; if you deploy code instead, run
-   `php config/migrations/2026_10_15_people_directory_admin_access.php`.
+   under Configuration → Document Numbering before the first live entry. Admins hold
+   `people_management.view/create/edit` in this dump.
+
+   Deploying code instead of importing? Apply the migrations in order, then let the auditor tell you
+   whether the identity rule holds:
+
+   ```bash
+   php config/migrations/2026_10_14_people_multi_role.php
+   php config/migrations/2026_10_15_people_directory_admin_access.php
+   php config/migrations/2026_10_15_person_code_coverage.php            # read-only preview
+   php config/migrations/2026_10_15_person_code_coverage.php --apply    # after you approve the list
+   php people_identity_audit.php                                        # exit 0 means the rule holds
+   ```
+
+   The preview prints every record that would receive a Person Code. On a production database that
+   list is the data you are signing off, so read it first — locally it is what surfaced ten seed
+   employees that nobody had ever put in the directory.
 6. **Rotate the database password that is still in git history.** `config/database.php` carried the
    production password in plaintext up to this change; the file is clean now, but the old value is
    reachable in past commits. Change it in the hosting panel and put only the new one in

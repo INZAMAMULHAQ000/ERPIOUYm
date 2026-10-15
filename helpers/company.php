@@ -182,6 +182,35 @@ if (!function_exists('nextDocumentNumber')) {
     }
 }
 
+if (!function_exists('nextUniqueDocumentNumber')) {
+    /**
+     * Allocate a document number only if the target column is actually free.
+     *
+     * `document_sequences` counters are per company, but the master codes they
+     * feed — `clients.client_code`, `contractors.contractor_code` — are unique
+     * across the whole database. So a second company's counter can hand out a
+     * code the first company already used, and the insert dies on error 1062 in
+     * front of the user. Re-allocating is cheap and correct; skipping forward
+     * leaves a gap, and gaps in a legal document sequence are normal.
+     *
+     * $table and $column are code-level constants, never request input.
+     */
+    function nextUniqueDocumentNumber($db, $docType, $table, $column, $maxAttempts = 25) {
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $number = nextDocumentNumber($db, $docType);
+            $check = $db->prepare("SELECT COUNT(*) FROM `$table` WHERE `$column` = ?");
+            $check->execute([$number]);
+            if ((int) $check->fetchColumn() === 0) {
+                return $number;
+            }
+        }
+        throw new RuntimeException(
+            "Could not allocate a unique number for $docType after $maxAttempts attempts — "
+            . "check the counter for '$docType' under Configuration → Document Numbering."
+        );
+    }
+}
+
 if (!function_exists('peekDocumentNumber')) {
     /**
      * Render the number the next allocation WOULD produce, without consuming it.

@@ -162,7 +162,9 @@ $listStmt = $db->prepare("
            cur.rate_amount, cur.rate_basis, cur.currency_code, cur.supply_source,
            cur.not_to_exceed_amount, cur.approved_at,
            v.vendor_name AS agency_name,
-           dep.department_name
+           dep.department_name,
+           (SELECT p.id FROM people p WHERE p.contractor_id = c.id LIMIT 1) AS person_id,
+           (SELECT p.person_code FROM people p WHERE p.contractor_id = c.id LIMIT 1) AS person_code
       FROM contractors c
       LEFT JOIN contractor_contracts cur
              ON cur.contractor_id = c.id AND cur.is_current = 1 AND cur.deleted_at IS NULL
@@ -366,7 +368,16 @@ $expiryDates = function ($row) {
                             </div>
                         </div>
                     </td>
-                    <td class="px-4 py-3"><span class="font-mono text-xs text-slate-500"><?= htmlspecialchars($r['contractor_code']) ?></span></td>
+                    <td class="px-4 py-3">
+                        <span class="font-mono text-xs text-slate-500"><?= htmlspecialchars($r['contractor_code']) ?></span>
+                        <?php if (!empty($r['person_id']) && hasPermission('people_management.view')): ?>
+                            <div class="mt-0.5">
+                                <a class="font-mono text-xs text-blue-600 hover:text-blue-900"
+                                   title="Person Code — the directory entry shared by every category this person belongs to"
+                                   href="<?= url('modules/people_management/view.php?id=' . (int) $r['person_id']) ?>"><?= htmlspecialchars($r['person_code']) ?></a>
+                            </div>
+                        <?php endif; ?>
+                    </td>
                     <td class="px-4 py-3 text-xs text-slate-600"><?= htmlspecialchars($categories[$r['contractor_category']] ?? '—') ?></td>
                     <td class="px-4 py-3">
                         <?php if ($r['contract_id']): ?>

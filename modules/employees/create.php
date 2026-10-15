@@ -34,18 +34,29 @@ $employeeId = 0;
 $slotDocs = [];
 $photoPath = '';
 
+/**
+ * Next Employee Code: EMP<YYYY><nnnn>, read past the prefix so the series keeps
+ * working beyond 9,999 people, and re-checked against the table because
+ * `employee_code` is unique and the caller retries on a duplicate email as
+ * though it were a duplicate code.
+ */
 function generateEmployeeCode($db)
 {
-    $year = date('Y');
-    $prefix = 'EMP' . $year;
-    $stmt = $db->query("SELECT employee_code FROM employees WHERE employee_code LIKE '$prefix%' ORDER BY employee_code DESC LIMIT 1");
-    $last = $stmt->fetch();
-    if ($last) {
-        $num = (int) substr($last['employee_code'], -4) + 1;
-    } else {
-        $num = 1;
+    $prefix = 'EMP' . date('Y');
+    $stmt = $db->prepare("SELECT MAX(employee_code) FROM employees WHERE employee_code LIKE ?");
+    $stmt->execute([$prefix . '%']);
+    $last = $stmt->fetchColumn();
+    $base = $last ? (int) substr($last, strlen($prefix)) : 0;
+
+    $free = $db->prepare("SELECT COUNT(*) FROM employees WHERE employee_code = ?");
+    for ($step = 1; $step <= 25; $step++) {
+        $code = $prefix . str_pad((string) ($base + $step), 4, '0', STR_PAD_LEFT);
+        $free->execute([$code]);
+        if ((int) $free->fetchColumn() === 0) {
+            return $code;
+        }
     }
-    return $prefix . str_pad($num, 4, '0', STR_PAD_LEFT);
+    throw new RuntimeException('Could not allocate a unique Employee Code — check for gaps in the ' . $prefix . ' series.');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -164,6 +175,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash($linked['ok'] ? 'wiz_ok' : 'wiz_err', $linked['message'], $linked['ok'] ? 'success' : 'error');
             if (!$linked['ok']) {
                 peopleOnboardingClearReturn();
+            }
+        } else {
+            // Every employee carries a Person Code. An employee added straight
+            // from HRMS still has to exist in the directory, either as a new
+            // entry or attached to the person their email already names.
+            $minted = peopleEnsurePersonForRecord($db, 'employee', $employeeId);
+            if ($minted['action'] === 'created' || $minted['action'] === 'attached') {
+                flash('directory', $minted['message'], 'info');
+            } elseif ($minted['action'] !== 'already') {
+                flash('directory', $minted['message'], 'warning');
             }
         }
 

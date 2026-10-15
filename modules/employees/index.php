@@ -307,7 +307,9 @@ $stmt = $db->prepare("
     SELECT
         e.*,
         d.department_name,
-        desig.designation_name
+        desig.designation_name,
+        (SELECT p.id FROM people p WHERE p.employee_id = e.id LIMIT 1) AS person_id,
+        (SELECT p.person_code FROM people p WHERE p.employee_id = e.id LIMIT 1) AS person_code
     FROM employees e
     LEFT JOIN departments d
         ON e.department_id = d.id
@@ -790,6 +792,15 @@ $statusColors = [
 
                         <td class="px-6 py-4 text-gray-600">
                             <?= sanitize($emp['employee_code'] ?? '-') ?>
+                            <?php if (!empty($emp['person_id']) && hasPermission('people_management.view')): ?>
+                                <div class="text-xs mt-0.5">
+                                    <a href="<?= url('modules/people_management/view.php?id=' . (int) $emp['person_id']) ?>"
+                                       class="text-blue-600 hover:text-blue-900 font-mono"
+                                       title="Person Code — the directory entry shared by every category this person belongs to">
+                                        <?= sanitize($emp['person_code']) ?>
+                                    </a>
+                                </div>
+                            <?php endif; ?>
                         </td>
 
 

@@ -246,8 +246,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 }
 
-// Reached only on an error path — every successful save redirects away.
+// Codes and open steps for the header strip. Reached on GET, and on POST only
+// when a save failed, because every successful save redirects away.
 $pendingRoles = peoplePendingRoles($person);
+$editCodes = peopleIdentityCodes($db, $person);
 $roleIcons = [
     'employee'   => 'fa-user-tie text-blue-500',
     'customer'   => 'fa-handshake text-purple-500',
@@ -261,7 +263,20 @@ $roleIcons = [
 </div>
 
 <div class="bg-white rounded-lg shadow p-6">
-    <h2 class="text-xl font-semibold mb-6">Edit Person — <?= sanitize($person['first_name'] . ' ' . $person['last_name']) ?></h2>
+    <h2 class="text-xl font-semibold mb-2">Edit Person — <?= sanitize($person['first_name'] . ' ' . $person['last_name']) ?></h2>
+
+    <div class="flex flex-wrap gap-2 mb-6 text-xs">
+        <span class="px-2 py-1 bg-gray-100 rounded font-mono" title="Person Code — unique to this person">
+            PER: <?= sanitize($person['person_code']) ?>
+        </span>
+        <?php foreach ($editCodes as $info): ?>
+            <span class="px-2 py-1 bg-gray-100 rounded font-mono <?= $info['code'] ? '' : 'text-gray-400' ?>"
+                  title="<?= $info['module'] ?>">
+                <?= strtoupper(substr($info['label'], 0, 3)) ?>:
+                <?= $info['code'] ? sanitize($info['code']) : ($info['visible'] ? ($info['status'] === 'pending' ? 'awaiting details' : 'none') : 'restricted') ?>
+            </span>
+        <?php endforeach; ?>
+    </div>
 
     <?php if ($errors): ?>
     <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">

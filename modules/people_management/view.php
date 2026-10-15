@@ -60,6 +60,10 @@ if ($person['user_id']) {
 
 $catLabels = ['employee' => 'Employee', 'customer' => 'Customer', 'contractor' => 'Contractor'];
 $catColors = ['employee' => 'bg-blue-100 text-blue-800', 'customer' => 'bg-purple-100 text-purple-800', 'contractor' => 'bg-orange-100 text-orange-800'];
+
+// Every code this person holds, filtered by what the viewer is allowed to see.
+$codes = peopleIdentityCodes($db, $person);
+$stateChip = ['complete' => 'bg-green-100 text-green-800', 'pending' => 'bg-amber-100 text-amber-800', 'declined' => 'bg-gray-100 text-gray-500'];
 ?>
 <div class="mb-6 flex justify-between items-center">
     <div>
@@ -93,6 +97,54 @@ $catColors = ['employee' => 'bg-blue-100 text-blue-800', 'customer' => 'bg-purpl
             <i class="fas fa-edit mr-2"></i>Edit
         </a>
         <?php endif; ?>
+    </div>
+</div>
+
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <h3 class="text-lg font-semibold text-gray-800 mb-1 border-b pb-2">Identity &amp; Codes</h3>
+    <p class="text-xs text-gray-500 mb-4">
+        One person, one Person Code. Each category they belong to carries its own code, assigned by that
+        module and linked here.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="border rounded-lg p-3 bg-gray-50">
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Person Code</div>
+            <div class="font-mono font-semibold text-gray-900 mt-1"><?= sanitize($person['person_code']) ?></div>
+            <div class="text-xs mt-1">
+                <span class="px-2 py-0.5 text-xs rounded <?= $person['status'] === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700' ?>">
+                    <?= ucfirst($person['status']) ?>
+                </span>
+            </div>
+        </div>
+        <?php foreach ($codes as $roleKey => $info): ?>
+        <div class="border rounded-lg p-3 <?= $info['code'] ? '' : 'opacity-70' ?>">
+            <div class="text-xs text-gray-500 uppercase tracking-wide"><?= $info['label'] ?> Code</div>
+            <div class="font-mono font-semibold mt-1 <?= $info['code'] ? 'text-gray-900' : 'text-gray-400' ?>">
+                <?php if ($info['code']): ?>
+                    <?= sanitize($info['code']) ?>
+                <?php elseif (!$info['visible']): ?>
+                    <span class="text-xs font-sans italic">restricted</span>
+                <?php elseif ($info['status'] === 'pending'): ?>
+                    <span class="text-xs font-sans italic">not issued yet</span>
+                <?php else: ?>
+                    <span class="text-gray-400">&mdash;</span>
+                <?php endif; ?>
+            </div>
+            <div class="text-xs mt-1">
+                <?php if ($info['status'] === null): ?>
+                    <span class="text-gray-400">— not in this category</span>
+                <?php elseif ($info['code']): ?>
+                    <a href="<?= url($info['view_url']) ?>" class="text-blue-600 hover:text-blue-900">
+                        <i class="fas fa-external-link-alt text-xs mr-1"></i><?= $info['module'] ?>
+                    </a>
+                <?php else: ?>
+                    <span class="px-2 py-0.5 rounded <?= $stateChip[$info['status']] ?? 'bg-gray-100 text-gray-700' ?>">
+                        <?= $info['status'] === 'pending' ? 'awaiting details' : ucfirst((string) $info['status']) ?>
+                    </span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
     </div>
 </div>
 

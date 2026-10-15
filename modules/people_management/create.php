@@ -15,20 +15,6 @@ if (empty($errors)) {
     clearOldInput();
 }
 
-function generatePersonCode($db)
-{
-    $year = date('Y');
-    $prefix = 'PER' . $year;
-    $stmt = $db->query("SELECT person_code FROM people WHERE person_code LIKE '$prefix%' ORDER BY person_code DESC LIMIT 1");
-    $last = $stmt->fetch();
-    if ($last) {
-        $num = (int) substr($last['person_code'], -4) + 1;
-    } else {
-        $num = 1;
-    }
-    return $prefix . str_pad($num, 4, '0', STR_PAD_LEFT);
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -114,16 +100,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($existing) {
+        // The person already exists, so their selected types are recorded on that
+        // entry rather than discarded: no second person is created, and nothing
+        // the user just asked for is silently dropped. Recording a type only opens
+        // its step in its own module — no employee, customer or contractor row is
+        // created from here. A type that was declined before is reopened, because
+        // selecting it again is an explicit change of mind.
+        $resume = peopleLoad($db, (int) $existing['id']);
+        $added = [];
+        foreach ($roles as $role) {
+            if (peopleRoleAdd($db, $resume, $role)) {
+                $added[] = $role;
+            } elseif (($resume['roles'][$role]['status'] ?? '') === 'declined' && peopleOnboardingReopen($db, $resume, $role)) {
+                $added[] = $role;
+            }
+        }
+        $labels = array_map(fn($r) => peopleRoleDefinition($r)['label'], $added);
+
         peopleOnboardingForgetInput();
         flash('info', $existing['first_name'] . ' ' . (string) $existing['last_name']
-            . ' is already in the directory (' . $existing['person_code'] . '). Their onboarding was reopened so the selected person types can be added to that record — no second person was created.');
+            . ' is already in the directory (' . $existing['person_code'] . ') — no second person was created.'
+            . ($labels ? ' Added to that record: ' . implode(', ', $labels) . '.'
+                       : ' They already hold every person type you selected.'));
         to(peopleOnboardingUrl($existing['id'], '&suggest=' . implode(',', $roles)));
     }
 
-    $personCode = generatePersonCode($db);
-
     try {
         $db->beginTransaction();
+
+        // Minted inside the transaction so the highest existing code is read and
+        // the insert commit under the same lock.
+        $personCode = peopleNextPersonCode($db);
 
         $userId = null;
         if ($createLogin) {

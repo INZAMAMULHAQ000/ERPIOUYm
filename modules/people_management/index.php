@@ -256,11 +256,14 @@ $stmt = $db->prepare("
         p.*,
         u.name AS user_name,
         u.email AS user_email,
-        u.status AS user_status
+        u.status AS user_status,
+        (SELECT e.employee_code FROM employees e WHERE e.id = p.employee_id LIMIT 1) AS employee_code,
+        (SELECT cl.client_code FROM clients cl WHERE cl.id = p.customer_id LIMIT 1) AS client_code,
+        (SELECT ct.contractor_code FROM contractors ct WHERE ct.id = p.contractor_id LIMIT 1) AS contractor_code
     FROM people p
     LEFT JOIN users u ON p.user_id = u.id
     $where
-    ORDER BY p.created_at DESC
+    ORDER BY p.created_at DESC, p.id DESC
     LIMIT ? OFFSET ?
 ");
 
@@ -862,6 +865,22 @@ $catColors = [
                                     <div class="font-medium text-gray-900">
                                         <?= sanitize($personName) ?>
                                     </div>
+
+                                    <?php
+                                    // Category codes, only for modules this viewer may see.
+                                    $otherCodes = [];
+                                    foreach (peopleRoleDefinitions() as $roleKey => $roleDef) {
+                                        $column = ['employee' => 'employee_code', 'customer' => 'client_code', 'contractor' => 'contractor_code'][$roleKey];
+                                        if (hasPermission($roleDef['view_perm']) && !empty($person[$column])) {
+                                            $otherCodes[] = $person[$column];
+                                        }
+                                    }
+                                    ?>
+                                    <?php if ($otherCodes): ?>
+                                        <div class="text-xs text-gray-500 font-mono">
+                                            <?= htmlspecialchars(implode(' · ', $otherCodes), ENT_QUOTES) ?>
+                                        </div>
+                                    <?php endif; ?>
 
                                 </div>
 

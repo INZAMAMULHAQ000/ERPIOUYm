@@ -4,6 +4,7 @@ require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once __DIR__ . '/document_service.php';
 require_once __DIR__ . '/contract_service.php';
+require_once '../../helpers/people_onboarding.php';
 
 if (!hasPermission('contractors.view')) {
     die('Access Denied');
@@ -19,6 +20,9 @@ if (!$c) {
     flash('nf', 'Contractor not found.', 'error');
     to('modules/contractors/index.php');
 }
+
+// The directory entry behind this register row, when the viewer can see it.
+$personRecord = peoplePersonForRecord($db, 'contractor', $id);
 
 $canEdit = hasPermission('contractors.edit');
 $canManage = hasPermission('contractors.manage_contracts');
@@ -130,6 +134,13 @@ $actionForm = function ($action, $contractId, $fields = '', $confirm = '', $butt
             <h1 class="text-2xl font-bold text-gray-800 leading-tight"><?= $esc($name) ?></h1>
             <p class="text-sm text-slate-500 mt-0.5">
                 <span class="font-mono"><?= $esc($c['contractor_code']) ?></span>
+                <?php if ($personRecord): ?>
+                    &middot; <a class="font-mono text-blue-600 hover:text-blue-900"
+                                href="<?= url('modules/people_management/view.php?id=' . (int) $personRecord['id']) ?>"
+                                title="Person Code — the directory entry shared by every category this person belongs to"><?= $esc($personRecord['person_code']) ?></a>
+                <?php elseif (hasPermission('people_management.view')): ?>
+                    &middot; <span class="italic text-slate-400">no Person Code</span>
+                <?php endif; ?>
                 &middot; <?= $esc($categories[$c['contractor_category']] ?? 'Uncategorised') ?>
                 &middot; <span class="text-[11px] px-2 py-0.5 rounded-full <?= $statusColors[$c['status']] ?? 'bg-slate-100 text-slate-600' ?>"><?= ucfirst($c['status']) ?></span>
             </p>

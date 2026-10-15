@@ -292,7 +292,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // Code comes from the company document sequence (CL + YYYY + 4), so the
             // counter is centralised and editable rather than derived from row counts.
-            $code = nextDocumentNumber($db, 'customer');
+            // The uniqueness loop matters: client_code is unique database-wide while
+            // the counter is per company, so two companies can reach the same number.
+            $code = nextUniqueDocumentNumber($db, 'customer', 'clients', 'client_code');
             $cols = array_merge(['client_code', 'created_at', 'created_by'], array_keys($data));
             $vals = array_merge([$code, date('Y-m-d H:i:s'), $_SESSION['user_id']], array_values($data));
             $ph = implode(', ', array_fill(0, count($cols), '?'));
@@ -315,6 +317,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             peopleOnboardingClearReturn();
         }
         to(peopleOnboardingUrl($wizardPerson['id']));
+    }
+
+    // An individual customer is a person and therefore needs a Person Code.
+    // Organisations are deliberately not minted into the human directory, so a
+    // 'skipped' result is the normal outcome and stays quiet.
+    $minted = peopleEnsurePersonForRecord($db, 'customer', $savedId);
+    if ($minted['action'] === 'created' || $minted['action'] === 'attached') {
+        flash('directory', $minted['message'], 'info');
+    } elseif ($minted['action'] === 'conflict' || $minted['action'] === 'failed') {
+        flash('directory', $minted['message'], 'warning');
     }
 
     to('modules/customers/view.php?id=' . $savedId);

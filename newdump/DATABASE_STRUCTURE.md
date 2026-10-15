@@ -1,6 +1,6 @@
 # ERP database structure — `erp_db`
 
-Full data dictionary generated **2026-10-15 04:55:19** from the live database by
+Full data dictionary generated **2026-10-15 07:02:02** from the live database by
 `php newdump/generate_structure.php`. Read straight from `information_schema` — this file is never
 hand-maintained, so it always reflects the real schema.
 
@@ -8,7 +8,7 @@ hand-maintained, so it always reflects the real schema.
 |---|---|
 | Tables | **469** |
 | Columns | **6,119** |
-| Total rows | **12,542** |
+| Total rows | **12,757** |
 | Engine | InnoDB |
 | Character set | utf8mb4 |
 
@@ -19,7 +19,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | Domain | Tables | Rows | |
 |---|---:|---:|---|
 | [Contractor master (new)](#contractor-master-new) | 4 | 0 | **added by `2026_10_14_contractor_master.php`**|
-| [Employee & HR](#employee-hr) | 26 | 429 ||
+| [Employee & HR](#employee-hr) | 26 | 442 ||
 | [Finance & General Ledger](#finance-general-ledger) | 91 | 2,295 ||
 | [Procurement & Vendors](#procurement-vendors) | 34 | 2,366 ||
 | [Sales & CRM](#sales-crm) | 7 | 28 ||
@@ -28,7 +28,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [Helpdesk](#helpdesk) | 9 | 35 ||
 | [AI module](#ai-module) | 217 | 2,988 ||
 | [Configuration & Lookups](#configuration-lookups) | 21 | 456 ||
-| [System & Security](#system-security) | 10 | 3,650 ||
+| [System & Security](#system-security) | 10 | 3,852 ||
 | [Other](#other) | 24 | 102 ||
 
 ## Table index
@@ -281,7 +281,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`asset_transfers`](#asset-transfers) | 14 | 0 | Finance & General Ledger |
 | [`asset_transfer_history`](#asset-transfer-history) | 16 | 0 | Finance & General Ledger |
 | [`attendance`](#attendance) | 10 | 218 | Employee & HR |
-| [`audit_logs`](#audit-logs) | 6 | 2,147 | System & Security |
+| [`audit_logs`](#audit-logs) | 6 | 2,336 | System & Security |
 | [`bank_accounts`](#bank-accounts) | 13 | 1 | Finance & General Ledger |
 | [`bank_reconciliation`](#bank-reconciliation) | 10 | 0 | Finance & General Ledger |
 | [`bank_reconciliation_items`](#bank-reconciliation-items) | 7 | 0 | Finance & General Ledger |
@@ -398,14 +398,14 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`payroll_payment_batches`](#payroll-payment-batches) | 9 | 1 | Employee & HR |
 | [`payroll_reconciliation`](#payroll-reconciliation) | 9 | 1 | Employee & HR |
 | [`payroll_runs`](#payroll-runs) | 20 | 3 | Employee & HR |
-| [`people`](#people) | 18 | 2 | Employee & HR |
+| [`people`](#people) | 18 | 15 | Employee & HR |
 | [`period_checklist_items`](#period-checklist-items) | 12 | 28 | Finance & General Ledger |
 | [`period_checklist_templates`](#period-checklist-templates) | 7 | 70 | Finance & General Ledger |
 | [`period_close_audit`](#period-close-audit) | 10 | 1,503 | Finance & General Ledger |
 | [`period_close_settings`](#period-close-settings) | 9 | 1 | Finance & General Ledger |
 | [`period_opening_balances`](#period-opening-balances) | 8 | 0 | Finance & General Ledger |
 | [`permissions`](#permissions) | 5 | 517 | System & Security |
-| [`person_roles`](#person-roles) | 8 | 2 | System & Security |
+| [`person_roles`](#person-roles) | 8 | 15 | System & Security |
 | [`petty_cash_funds`](#petty-cash-funds) | 9 | 0 | Finance & General Ledger |
 | [`petty_cash_transactions`](#petty-cash-transactions) | 10 | 0 | Finance & General Ledger |
 | [`po_receiving_summary`](#po-receiving-summary) | 11 | 0 | Other |
@@ -1106,7 +1106,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### people
 
-18 columns · 2 rows
+18 columns · 15 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -9391,7 +9391,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### audit_logs
 
-6 columns · 2,147 rows
+6 columns · 2,336 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|
@@ -9432,7 +9432,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### person_roles
 
-8 columns · 2 rows
+8 columns · 15 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|

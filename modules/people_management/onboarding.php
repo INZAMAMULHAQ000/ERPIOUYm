@@ -231,7 +231,21 @@ $csrf = csrfToken();
 
                 <div class="flex items-center gap-2 shrink-0">
                     <?php if ($state['status'] === 'pending'): ?>
-                        <?php if ($canCreate): ?>
+                        <?php if ($existing && empty($existing['claimed_by'])): ?>
+                            <!-- A record for this email already exists and nobody owns
+                                 it. Offering "create" here would produce a duplicate
+                                 that the database may or may not reject, so the only
+                                 primary action is to adopt the record that is there. -->
+                            <form method="POST" class="inline">
+                                <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                                <input type="hidden" name="action" value="attach">
+                                <input type="hidden" name="role" value="<?= $role ?>">
+                                <input type="hidden" name="record_id" value="<?= (int) $existing['id'] ?>">
+                                <button type="submit" class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 text-sm whitespace-nowrap">
+                                    <i class="fas fa-link mr-1"></i>Link the existing <?= strtolower($def['label']) ?> record
+                                </button>
+                            </form>
+                        <?php elseif ($canCreate): ?>
                             <a href="<?= url($def['create_url'] . '?person_id=' . $personId) ?>"
                                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm whitespace-nowrap">
                                 <i class="fas fa-arrow-right mr-1"></i>Complete <?= $def['label'] ?> details
@@ -272,17 +286,9 @@ $csrf = csrfToken();
                         <i class="fas fa-triangle-exclamation mr-1"></i>
                         A <?= strtolower($def['label']) ?> record already exists for this email
                         (<span class="font-mono"><?= sanitize($existing['code']) ?></span>).
-                        Link it to avoid a duplicate — creating another one will be rejected.
+                        That is why this step offers to link it: creating a second record for the same
+                        human would be rejected, and the directory would then disagree with the module.
                     </span>
-                    <form method="POST" class="inline">
-                        <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
-                        <input type="hidden" name="action" value="attach">
-                        <input type="hidden" name="role" value="<?= $role ?>">
-                        <input type="hidden" name="record_id" value="<?= (int) $existing['id'] ?>">
-                        <button type="submit" class="bg-amber-600 text-white px-3 py-1 rounded hover:bg-amber-700 ml-2">
-                            Link existing
-                        </button>
-                    </form>
                 </div>
             </div>
             <?php elseif ($existing): ?>

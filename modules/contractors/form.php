@@ -229,6 +229,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$linked['ok']) {
             peopleOnboardingClearReturn();
         }
+    } else {
+        // Every contractor carries a Person Code. Registering someone straight
+        // from Contracts must still put them in the directory.
+        $minted = peopleEnsurePersonForRecord($db, 'contractor', $contractorId);
+        if ($minted['action'] === 'created' || $minted['action'] === 'attached') {
+            flash('directory', $minted['message'], 'info');
+        } elseif ($minted['action'] !== 'already') {
+            flash('directory', $minted['message'], 'warning');
+        }
     }
 
     if ($engInput !== null) {

@@ -58,8 +58,10 @@ $tickets->execute([$id]); $tickets = $tickets->fetchAll();
 $openTickets = $db->prepare("SELECT COUNT(*) FROM tickets WHERE client_id = ? AND status NOT IN ('closed','resolved')");
 $openTickets->execute([$id]); $openTickets = (int) $openTickets->fetchColumn();
 
-$people = $db->prepare("SELECT id, first_name, last_name, category FROM people WHERE customer_id = ? ORDER BY first_name");
-$people->execute([$id]); $people = $people->fetchAll();
+$people = $db->prepare("SELECT id, person_code, first_name, last_name, category FROM people WHERE customer_id = ? ORDER BY first_name");
+$people->execute([$id]);
+// The directory is a separate right: without it this panel shows nothing at all.
+$people = hasPermission('people_management.view') ? $people->fetchAll() : [];
 
 $parent = null;
 if ($c['parent_client_id']) {
@@ -177,6 +179,11 @@ $profileGroups = [
             </div>
             <p class="text-sm text-slate-500 mt-1">
                 <span class="font-mono"><?= htmlspecialchars($c['client_code']) ?></span>
+                <?php if ($c['customer_type'] === 'individual' && $people): ?>
+                    &middot; <a class="font-mono text-indigo-600 hover:text-indigo-900"
+                                href="<?= url('modules/people_management/view.php?id=' . (int) $people[0]['id']) ?>"
+                                title="Person Code — the directory entry shared by every category this person belongs to"><?= htmlspecialchars($people[0]['person_code']) ?></a>
+                <?php endif; ?>
                 &middot; <?= htmlspecialchars(ucfirst($c['customer_type'])) ?>
                 <?php if ($c['segment']): ?>&middot; <?= htmlspecialchars($c['segment']) ?><?php endif; ?>
                 <?php if ($c['city'] || $c['country']): ?>&middot; <?= htmlspecialchars(trim(($c['city'] ?? '') . ', ' . ($c['country'] ?? ''), ', ')) ?><?php endif; ?>
@@ -523,11 +530,15 @@ $profileGroups = [
         </div>
         <?php if ($people): ?>
         <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-            <h3 class="text-sm font-semibold text-slate-800 mb-4">Linked People Records</h3>
+            <h3 class="text-sm font-semibold text-slate-800 mb-4">
+                Linked People Records
+                <span class="ml-2 text-xs font-normal text-slate-400">each carries a Person Code shared by all their categories</span>
+            </h3>
             <div class="flex flex-wrap gap-2">
                 <?php foreach ($people as $p): ?>
                 <a href="<?= url('modules/people_management/view.php?id=' . $p['id']) ?>" class="px-3 py-1.5 bg-slate-50 rounded-lg text-sm hover:bg-indigo-50 transition">
                     <i class="fas fa-user text-slate-400 text-xs mr-1.5"></i><?= htmlspecialchars($p['first_name'] . ' ' . $p['last_name']) ?>
+                    <span class="font-mono text-xs text-slate-500 ml-1.5"><?= htmlspecialchars($p['person_code']) ?></span>
                 </a>
                 <?php endforeach; ?>
             </div>

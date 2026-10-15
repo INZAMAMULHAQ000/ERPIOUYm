@@ -71,22 +71,14 @@ function contractorMonthlyEquivalent($amount, $basis)
 }
 
 /**
- * Allocate a document number that is not already taken. Master codes are global
- * while `document_sequences` counters are per company, so in a multi-entity
- * setup two companies can produce the same number; consuming the next value on
- * collision keeps both counters honest and the unique key unbroken.
+ * Contractor-side entry point to the shared allocator in helpers/company.php.
+ * Kept as a named function because every caller here reads better saying
+ * "allocate a contractor number" than repeating the table and column; the
+ * collision rule itself exists once, for all globally unique master codes.
  */
 function contractorAllocateNumber($db, $docType, $table, $column)
 {
-    for ($attempt = 0; $attempt < 25; $attempt++) {
-        $number = nextDocumentNumber($db, $docType);
-        $stmt = $db->prepare("SELECT COUNT(*) FROM `$table` WHERE `$column` = ?");
-        $stmt->execute([$number]);
-        if ((int) $stmt->fetchColumn() === 0) {
-            return $number;
-        }
-    }
-    throw new RuntimeException('Could not allocate a unique number for ' . $docType . '. Check the Document Numbering counter.');
+    return nextUniqueDocumentNumber($db, $docType, $table, $column);
 }
 
 /** The contract flagged current for a contractor, newest first as a safety net. */

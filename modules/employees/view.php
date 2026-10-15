@@ -3,6 +3,7 @@ $pageTitle = 'Employee Profile';
 require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once __DIR__ . '/document_service.php';
+require_once '../../helpers/people_onboarding.php';
 
 if (!hasPermission('employees.view')) {
     die('Access Denied');
@@ -26,6 +27,10 @@ if ($emp['reporting_manager_id']) {
     $mgrStmt->execute([$emp['reporting_manager_id']]);
     $manager = $mgrStmt->fetch();
 }
+
+// The directory entry behind this employee. Null when the viewer has no right
+// to People Management, or when the row predates the identity backfill.
+$personRecord = peoplePersonForRecord($db, 'employee', $id);
 
 $documents = $db->prepare("SELECT * FROM employee_documents WHERE employee_id = ? ORDER BY created_at DESC");
 $documents->execute([$id]);
@@ -59,6 +64,23 @@ $visaLabels = employeeVisaTypes();
                 <div>
                     <label class="block text-sm font-medium text-gray-500">Employee Code</label>
                     <p class="text-gray-900 font-medium"><?= sanitize($emp['employee_code']) ?></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-500">Person Code</label>
+                    <?php if ($personRecord): ?>
+                        <p class="font-medium">
+                            <a href="<?= url('modules/people_management/view.php?id=' . $personRecord['id']) ?>"
+                               class="text-blue-600 hover:text-blue-900 font-mono"
+                               title="Directory entry — shows every category this person belongs to">
+                                <?= sanitize($personRecord['person_code']) ?>
+                                <i class="fas fa-address-card text-xs ml-1"></i>
+                            </a>
+                        </p>
+                    <?php else: ?>
+                        <p class="text-gray-400 text-sm italic">
+                            <?= hasPermission('people_management.view') ? 'no directory entry' : 'not visible to your role' ?>
+                        </p>
+                    <?php endif; ?>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-500">Full Name</label>
