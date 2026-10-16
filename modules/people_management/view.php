@@ -2,6 +2,7 @@
 $pageTitle = 'View Person';
 require_once '../../includes/header.php';
 require_once '../../helpers/people_onboarding.php';
+require_once '../../helpers/account.php';
 require_once '../../helpers/attachment_storage.php';
 require_once __DIR__ . '/../contractors/document_service.php';
 require_once __DIR__ . '/../contractors/contract_service.php';
@@ -58,6 +59,30 @@ if ($person['user_id']) {
     $roleStmt->execute([$person['user_id']]);
     $userRoles = $roleStmt->fetchAll(PDO::FETCH_COLUMN);
 }
+
+// A directory entry with no login is the dead end this panel exists to close.
+// Creating the account needs the right to create users *and* to edit this person,
+// because the point is to attach one to the other.
+$canGrantLogin = !$person['user_id']
+              && hasPermission('users.create')
+              && hasPermission('people_management.edit');
+$grantableRoles = [];
+if ($canGrantLogin) {
+    $allRoleIds = $db->query("SELECT id FROM roles WHERE deleted_at IS NULL")
+                     ->fetchAll(PDO::FETCH_COLUMN);
+    $allowed = accountGrantableRoleIds($db, $allRoleIds, $_SESSION['user_id'])['ids'];
+    if ($allowed) {
+        $in = implode(',', array_fill(0, count($allowed), '?'));
+        $stmt = $db->prepare("SELECT id, name FROM roles WHERE id IN ($in) ORDER BY name");
+        $stmt->execute(array_values($allowed));
+        $grantableRoles = $stmt->fetchAll();
+    } else {
+        $canGrantLogin = false;
+    }
+}
+
+// An account that exists but is attached to nobody is not a reason to create another.
+$orphanLogin = $person['user_id'] ? null : accountUnclaimedForPerson($db, $person);
 
 $catLabels = ['employee' => 'Employee', 'customer' => 'Customer', 'contractor' => 'Contractor'];
 $catColors = ['employee' => 'bg-blue-100 text-blue-800', 'customer' => 'bg-purple-100 text-purple-800', 'contractor' => 'bg-orange-100 text-orange-800'];
@@ -422,10 +447,18 @@ $stateChip = ['complete' => 'bg-green-100 text-green-800', 'pending' => 'bg-ambe
                     </div>
                     <?php if ($userRoles): ?>
                     <div>
-                        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Roles</div>
+                        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Login roles</div>
                         <?php foreach ($userRoles as $role): ?>
                         <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mr-1"><?= sanitize($role) ?></span>
                         <?php endforeach; ?>
+                        <?php if (hasPermission('users.edit')): ?>
+                        <p class="text-xs text-gray-500 mt-1">
+                            Roles decide what the login may do, and are separate from the person types above.
+                            <a href="<?= url('modules/users/edit.php?id=' . (int) $person['user_id']) ?>" class="text-blue-600 hover:text-blue-900">
+                                <i class="fas fa-user-gear mr-1"></i>Change this login's role
+                            </a>
+                        </p>
+                        <?php endif; ?>
                     </div>
                     <?php endif; ?>
                     <div class="pt-2">
@@ -433,12 +466,102 @@ $stateChip = ['complete' => 'bg-green-100 text-green-800', 'pending' => 'bg-ambe
                             <i class="fas fa-external-link-alt mr-1"></i>View User Record
                         </a>
                     </div>
+                    <?php if (hasPermission('users.edit') && hasPermission('people_management.edit')): ?>
+                    <form method="post" action="login.php" class="pt-2 border-t"
+                          onsubmit="return confirm('Unlink this login from <?= sanitize($person['person_code']) ?>? The account stays and can be attached again later; neither it nor this person is deleted.');">
+                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                        <input type="hidden" name="id" value="<?= $person['id'] ?>">
+                        <input type="hidden" name="account_action" value="detach">
+                        <button type="submit" class="text-xs text-gray-500 hover:text-red-700">
+                            <i class="fas fa-link-slash mr-1"></i>Unlink this login from the person
+                        </button>
+                    </form>
+                    <?php endif; ?>
                 </div>
             <?php else: ?>
+                <?php if ($orphanLogin && hasPermission('users.edit') && hasPermission('people_management.edit')): ?>
+                <form method="post" action="login.php" class="space-y-2 mb-4 p-3 bg-blue-50 rounded border border-blue-200">
+                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <input type="hidden" name="id" value="<?= $person['id'] ?>">
+                    <input type="hidden" name="account_action" value="link">
+                    <input type="hidden" name="user_id" value="<?= (int) $orphanLogin['id'] ?>">
+                    <p class="text-sm text-gray-700">
+                        <i class="fas fa-link mr-1 text-blue-600"></i>
+                        An account already exists for <strong><?= sanitize($orphanLogin['email']) ?></strong>
+                        (<?= sanitize($orphanLogin['name']) ?>, <?= sanitize($orphanLogin['status']) ?>)
+                        and no directory entry claims it.
+                    </p>
+                    <button type="submit" class="bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition text-sm">
+                        <i class="fas fa-link mr-1"></i>Link the existing account
+                    </button>
+                </form>
+                <?php endif; ?>
+            <?php endif; ?>
+            <?php if (!$person['user_id'] && $canGrantLogin): ?>
+                <form method="post" action="login.php" class="space-y-3">
+                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <input type="hidden" name="id" value="<?= $person['id'] ?>">
+                    <input type="hidden" name="account_action" value="grant">
+                    <p class="text-sm text-gray-600">
+                        <i class="fas fa-user-plus mr-1 text-blue-500"></i>
+                        Give <strong><?= sanitize($person['first_name']) ?></strong> a login account.
+                        This creates the sign-in record and attaches it to this directory entry, so the
+                        person keeps one record with all of their codes.
+                    </p>
+                    <div>
+                        <label class="block text-xs text-gray-500 uppercase tracking-wide mb-1" for="login_name">Name on the login</label>
+                        <input type="text" id="login_name" name="name" required maxlength="100"
+                           value="<?= sanitize(trim($person['first_name'] . ' ' . (string) $person['last_name'])) ?>"
+                           class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 uppercase tracking-wide mb-1" for="login_email">Login email</label>
+                        <input type="email" id="login_email" name="email" required
+                           value="<?= sanitize($person['email']) ?>" placeholder="person@company.com" autocomplete="off"
+                           class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <?php if (empty($person['email'])): ?>
+                        <p class="text-xs text-amber-600 mt-1">This person has no email on file — type the address they will sign in with.</p>
+                        <?php endif; ?>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 uppercase tracking-wide mb-1" for="login_password">Password</label>
+                        <input type="password" id="login_password" name="password" required minlength="6" autocomplete="new-password"
+                           class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <p class="text-xs text-gray-500 mt-1">At least 6 characters. Share it with the person directly — the system does not email passwords.</p>
+                    </div>
+                    <div>
+                        <span class="block text-xs text-gray-500 uppercase tracking-wide mb-1">Roles</span>
+                        <?php foreach ($grantableRoles as $role): ?>
+                        <label class="inline-flex items-center mr-4 mb-1 text-sm">
+                            <input type="checkbox" name="roles[]" value="<?= (int) $role['id'] ?>" class="rounded text-blue-600"
+                                <?= (int) $role['id'] === 3 ? 'checked' : '' ?>>
+                            <span class="ml-2"><?= sanitize($role['name']) ?></span>
+                        </label>
+                        <?php endforeach; ?>
+                        <p class="text-xs text-gray-500 mt-1">
+                            Only roles your own account holds can be handed out. Saving without a tick leaves
+                            the account able to sign in but unable to open any module.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3 pt-1">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition text-sm">
+                            <i class="fas fa-user-plus mr-1"></i>Create login &amp; attach
+                        </button>
+                        <a href="<?= url('modules/users/create.php') ?>" class="text-xs text-gray-500 hover:text-gray-700">
+                            Need a standalone account? Use Users
+                        </a>
+                    </div>
+                </form>
+            <?php elseif (!$person['user_id']): ?>
                 <div class="text-center py-4">
                     <i class="fas fa-user-slash text-gray-300 text-4xl mb-2"></i>
                     <p class="text-gray-500 text-sm">No login credentials created</p>
-                    <p class="text-xs text-gray-400 mt-1">This person cannot log in to the ERP system</p>
+                    <p class="text-xs text-gray-400 mt-1">
+                        This person cannot log in to the ERP system.
+                        <?php if (!hasPermission('users.create')): ?>
+                        Granting access needs the <code>users.create</code> permission.
+                        <?php endif; ?>
+                    </p>
                 </div>
             <?php endif; ?>
         </div>

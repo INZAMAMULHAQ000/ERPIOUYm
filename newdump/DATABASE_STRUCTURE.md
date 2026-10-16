@@ -1,6 +1,6 @@
 # ERP database structure — `erp_db`
 
-Full data dictionary generated **2026-10-15 08:56:04** from the live database by
+Full data dictionary generated **2026-10-16 06:58:04** from the live database by
 `php newdump/generate_structure.php`. Read straight from `information_schema` — this file is never
 hand-maintained, so it always reflects the real schema.
 
@@ -8,7 +8,7 @@ hand-maintained, so it always reflects the real schema.
 |---|---|
 | Tables | **469** |
 | Columns | **6,119** |
-| Total rows | **12,585** |
+| Total rows | **12,755** |
 | Engine | InnoDB |
 | Character set | utf8mb4 |
 
@@ -28,7 +28,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [Helpdesk](#helpdesk) | 9 | 35 ||
 | [AI module](#ai-module) | 217 | 2,988 ||
 | [Configuration & Lookups](#configuration-lookups) | 21 | 456 ||
-| [System & Security](#system-security) | 10 | 4,083 ||
+| [System & Security](#system-security) | 10 | 4,253 ||
 | [Other](#other) | 24 | 102 ||
 
 ## Table index
@@ -281,7 +281,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 | [`asset_transfers`](#asset-transfers) | 14 | 0 | Finance & General Ledger |
 | [`asset_transfer_history`](#asset-transfer-history) | 16 | 0 | Finance & General Ledger |
 | [`attendance`](#attendance) | 10 | 0 | Employee & HR |
-| [`audit_logs`](#audit-logs) | 6 | 2,575 | System & Security |
+| [`audit_logs`](#audit-logs) | 6 | 2,745 | System & Security |
 | [`bank_accounts`](#bank-accounts) | 13 | 1 | Finance & General Ledger |
 | [`bank_reconciliation`](#bank-reconciliation) | 10 | 0 | Finance & General Ledger |
 | [`bank_reconciliation_items`](#bank-reconciliation-items) | 7 | 0 | Finance & General Ledger |
@@ -9391,7 +9391,7 @@ Legend for the Key column below: `PK` primary, `UQ` unique, `IDX` indexed, `FK` 
 
 ### audit_logs
 
-6 columns · 2,575 rows
+6 columns · 2,745 rows
 
 | # | Column | Type | Null | Key | Default | Notes |
 |---:|---|---|---|---|---|---|

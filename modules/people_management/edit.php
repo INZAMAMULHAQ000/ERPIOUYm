@@ -485,7 +485,7 @@ $roleIcons = [
             this.value = this.value.replace(/[^A-Za-z ]/g, '');
         });
 
-        $("#email,#login_email").on("input", function() {
+        $("#email").on("input", function() {
            this.value = this.value.replace(/[^A-Za-z0-9._%+\-@]/g, '');
         });
 
@@ -524,14 +524,6 @@ $roleIcons = [
                     required: function() {
                         return $('#employeeFields').length > 0;
                     }
-                },
-
-                login_email: {
-                    email: true
-                },
-
-                password: {
-                    minlength: 6
                 }
             },
 
@@ -562,14 +554,6 @@ $roleIcons = [
 
                 joining_date: {
                     required: "Joining Date is required"
-                },
-
-                login_email: {
-                    email: "Please enter a valid login email"
-                },
-
-                password: {
-                    minlength: "Password must be at least 6 characters"
                 }
             },
 

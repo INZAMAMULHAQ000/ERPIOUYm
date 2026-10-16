@@ -305,10 +305,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </form>
 
+        <?php if (!IS_PRODUCTION): ?>
         <p class="ms-demo">
             <i class="fas fa-circle-info" style="margin-right:4px;"></i>
             Demo: <code>admin@erp.com</code> / <code>admin123</code>
         </p>
+        <?php endif; ?>
 
         <p class="ms-footer">
             <a href="#" onclick="return false;">Terms of use</a>

@@ -4,6 +4,7 @@ require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once '../../helpers/validation.php';
 require_once '../../helpers/people_onboarding.php';
+require_once '../../helpers/account.php';
 
 if (!hasPermission('people_management.create')) {
     die('Access Denied');
@@ -86,10 +87,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         if ($assignRole > 0) {
-            $roleCheck = $db->prepare("SELECT id FROM roles WHERE id = ? AND deleted_at IS NULL LIMIT 1");
-            $roleCheck->execute([$assignRole]);
-            if (!$roleCheck->fetch()) {
-                $errors['assign_role'] = 'Choose a valid role';
+            $grant = accountGrantableRoleIds($db, [$assignRole], $_SESSION['user_id']);
+            if (!$grant['ids']) {
+                $errors['assign_role'] = $grant['refused']
+                    ? 'You may only grant roles you hold yourself — this account cannot assign '
+                      . implode(', ', $grant['refused']) . '.'
+                    : 'Choose a valid role';
             }
         }
     }
@@ -132,17 +135,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // the insert commit under the same lock.
         $personCode = peopleNextPersonCode($db);
 
-        $userId = null;
-        if ($createLogin) {
-            $userStmt = $db->prepare("INSERT INTO users (name, email, password, status, created_by) VALUES (?, ?, ?, 'active', ?)");
-            $userStmt->execute([$loginName, $loginEmail, password_hash($password, PASSWORD_DEFAULT), $_SESSION['user_id']]);
-            $userId = (int) $db->lastInsertId();
-
-            if ($assignRole > 0) {
-                $db->prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)")->execute([$userId, $assignRole]);
-            }
-        }
-
         // One person, one record, however many roles were selected. The role
         // rows are what make this a multi-role directory entry.
         $personStmt = $db->prepare("INSERT INTO people (
@@ -159,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $data['gender'] ?: null,
             $data['date_of_birth'] ?: null,
             peoplePrimaryRole($roles),
-            $userId ?: null,
+            null,
             $data['notes'] ?: null,
             $data['status'],
         ]);
@@ -167,7 +159,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         peopleRolesInsert($db, $personId, $roles);
 
-        $db->commit();
+        // The login is created last and inside the same transaction: a person is
+        // never left holding a user_id that points at an account that failed, and an
+        // account is never left with no person. accountCreate() sees the open
+        // transaction and neither commits nor flashes.
+        $loginError = null;
+        if ($createLogin) {
+            $account = accountCreate($db, [
+                'name'      => $loginName,
+                'email'     => $loginEmail,
+                'password'  => $password,
+                'status'    => 'active',
+                'roles'     => $assignRole > 0 ? [$assignRole] : [],
+                'person_id' => $personId,
+            ], $_SESSION['user_id']);
+
+            if ($account['errors']) {
+                $loginError = 'Login not created: ' . implode(' ', $account['errors']);
+            }
+        }
+
+        if ($loginError !== null) {
+            $db->rollBack();
+            $errors['_general'] = $loginError;
+        } else {
+            $db->commit();
+        }
     } catch (PDOException $e) {
         $db->rollBack();
         if ($e->errorInfo[1] == 1062) {

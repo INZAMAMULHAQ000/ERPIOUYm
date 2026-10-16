@@ -3,6 +3,7 @@ $pageTitle = 'Edit User';
 require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once '../../helpers/validation.php';
+require_once '../../helpers/account.php';
 
 if (!hasPermission('users.edit')) {
     die('Access Denied');
@@ -24,9 +25,21 @@ if (!$user) {
     to('modules/users/index.php');
 }
 
-$old = $_POST;
+// Needed by the save path as well as the form, so it is read once, up here.
+$roles = $db->query("SELECT * FROM roles WHERE deleted_at IS NULL ORDER BY name")->fetchAll();
+$assignedRoles = assignedRoleIds($db, $id);
+
+// The directory entry this login belongs to, if any.
+$personStmt = $db->prepare("SELECT id, person_code, first_name, last_name FROM people WHERE user_id = ? LIMIT 1");
+$personStmt->execute([$id]);
+$personRecord = $personStmt->fetch();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        flash('error', 'Invalid security token. Please try again.');
+        to('modules/users/edit.php?id=' . $id);
+    }
+
     $data = [
         'name' => $_POST['name'] ?? '',
         'email' => $_POST['email'] ?? '',
@@ -38,11 +51,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'email' => 'required|email'
     ]);
 
+    if (!in_array($data['status'], ['active', 'inactive', 'suspended'], true)) {
+        $errors['status'] = 'Choose a valid status';
+    }
+
     if (empty($errors)) {
         $checkStmt = $db->prepare("SELECT id FROM users WHERE email = ? AND deleted_at IS NULL AND id != ?");
         $checkStmt->execute([$data['email'], $id]);
         if ($checkStmt->fetch()) {
             $errors['email'] = 'Email already exists';
+        }
+    }
+
+    $grant = accountGrantableRoleIds($db, $_POST['roles'] ?? [], $_SESSION['user_id']);
+    $requestedRoles = $grant['ids'];
+    if ($grant['refused']) {
+        $errors['roles'] = 'You may only grant roles you hold yourself: '
+                         . implode(', ', $grant['refused']) . ' cannot be assigned by this account.';
+    }
+
+    if (empty($errors)) {
+        $blocked = roleChangeBlocked($db, $id, $requestedRoles, $data['status'], $_SESSION['user_id'] ?? 0);
+        if ($blocked !== null) {
+            $errors['roles'] = $blocked;
         }
     }
 
@@ -62,27 +93,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt = $db->prepare($updateSql);
     $stmt->execute($updateParams);
 
-    $db->exec("DELETE FROM user_roles WHERE user_id = $id");
-    if (!empty($_POST['roles'])) {
+    $db->prepare("DELETE FROM user_roles WHERE user_id = ?")->execute([$id]);
+    if ($requestedRoles) {
         $roleStmt = $db->prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)");
-        foreach ($_POST['roles'] as $roleId) {
+        foreach ($requestedRoles as $roleId) {
             $roleStmt->execute([$id, $roleId]);
         }
     }
 
-    logAudit($_SESSION['user_id'], 'update', 'users');
-    flash('success', 'User updated successfully');
+    $before = roleNamesFor($db, $assignedRoles);
+    $after = roleNamesFor($db, $requestedRoles);
+    $roleNote = $before === $after
+        ? 'roles unchanged (' . (implode(', ', $before) ?: 'none') . ')'
+        : 'roles [' . (implode(', ', $before) ?: 'none') . '] -> [' . (implode(', ', $after) ?: 'none') . ']';
+    logAudit($_SESSION['user_id'], "Updated user: {$data['email']} — $roleNote, status {$data['status']}", 'users');
+    flash('success', 'User updated successfully'
+        . ($before !== $after ? '. Roles are now: ' . (implode(', ', $after) ?: 'none') . '.' : '.'));
     to('modules/users/index.php');
-
-
-
-    $user = array_merge($user, $data);
 }
 
-$roles = $db->query("SELECT * FROM roles WHERE deleted_at IS NULL")->fetchAll();
-$userRoles = $db->prepare("SELECT role_id FROM user_roles WHERE user_id = ?");
-$userRoles->execute([$id]);
-$assignedRoles = array_column($userRoles->fetchAll(), 'role_id');
+// On a re-render after a refused save, show what was attempted rather than
+// silently snapping the checkboxes back to what is stored.
+$subscribed = old('roles');
+$selectedRoles = is_array($subscribed) ? assignableRoleIds($db, $subscribed) : $assignedRoles;
 ?>
 
 <div class="mb-6">
@@ -105,6 +138,7 @@ $assignedRoles = array_column($userRoles->fetchAll(), 'role_id');
     <?php endif; ?>
 
     <form method="POST" id="userForm" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Name <span class="text-red-600">*</span></labe>
             <input type="text" name="name" value="<?= old('name', $user['name']) ?>" required
@@ -139,12 +173,26 @@ $assignedRoles = array_column($userRoles->fetchAll(), 'role_id');
                 <?php foreach ($roles as $role): ?>
                     <label class="inline-flex items-center mr-4">
                         <input type="checkbox" name="roles[]" value="<?= $role['id'] ?>"
-                            <?= in_array($role['id'], $assignedRoles) ? 'checked' : '' ?>
+                            <?= in_array((int) $role['id'], $selectedRoles, true) ? 'checked' : '' ?>
                             class="rounded text-blue-600">
                         <span class="ml-2"><?= sanitize($role['name']) ?></span>
                     </label>
                 <?php endforeach; ?>
             </div>
+            <p class="text-xs text-gray-500 mt-2">
+                A role is what this login may do; it is separate from the person types on their directory
+                entry. Super Admin can be removed from another account but not from your own, and never
+                from the last active Super Admin.
+            </p>
+            <?php if ($personRecord): ?>
+            <p class="text-xs text-gray-500 mt-1">
+                <i class="fas fa-address-card mr-1"></i>
+                This login belongs to directory entry
+                <a href="<?= url('modules/people_management/view.php?id=' . (int) $personRecord['id']) ?>"
+                   class="text-blue-600 hover:text-blue-900 font-mono"><?= sanitize($personRecord['person_code']) ?></a>
+                &middot; <?= sanitize(trim($personRecord['first_name'] . ' ' . (string) $personRecord['last_name'])) ?>
+            </p>
+            <?php endif; ?>
         </div>
 
         <div class="pt-4">

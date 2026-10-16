@@ -3,6 +3,7 @@ $pageTitle = 'Create User';
 require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
 require_once '../../helpers/validation.php';
+require_once '../../helpers/account.php';
 
 if (!hasPermission('users.create')) {
     die('Access Denied');
@@ -15,52 +16,31 @@ if (empty($errors)) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $data = [
-        'name' => $_POST['name'] ?? '',
-        'email' => $_POST['email'] ?? '',
-        'password' => $_POST['password'] ?? '',
-        'status' => $_POST['status'] ?? 'active'
-    ];
-
-    $errors = validate($data, [
-        'name' => 'required|min:2|max:100',
-        'email' => 'required|email',
-        'password' => 'required|min:6'
-    ]);
-
-    if (empty($errors)) {
-        $checkStmt = $db->prepare("SELECT id FROM users WHERE email = ? AND deleted_at IS NULL");
-        $checkStmt->execute([$data['email']]);
-        if ($checkStmt->fetch()) {
-            $errors['email'] = 'Email already exists';
-        }
-    }
-
-    if (!empty($errors)) {
-        saveFormState($errors);
+    if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        flash('error', 'Invalid security token. Please try again.');
         to('modules/users/create.php');
     }
 
-    $stmt = $db->prepare("INSERT INTO users (name, email, password, status, created_by) VALUES (?, ?, ?, ?, ?)");
-    $stmt->execute([
-        $data['name'],
-        $data['email'],
-        password_hash($data['password'], PASSWORD_DEFAULT),
-        $data['status'],
-        $_SESSION['user_id']
-    ]);
+    // One implementation for every account this system creates, so a login minted
+    // here and one minted from a person's profile cannot disagree about validation,
+    // who may hand out which role, or what gets audited.
+    $result = accountCreate($db, [
+        'name'     => $_POST['name'] ?? '',
+        'email'    => $_POST['email'] ?? '',
+        'password' => $_POST['password'] ?? '',
+        'status'   => $_POST['status'] ?? 'active',
+        'roles'    => $_POST['roles'] ?? [],
+    ], $_SESSION['user_id']);
 
-    $userId = $db->lastInsertId();
-
-    if (!empty($_POST['roles'])) {
-        $roleStmt = $db->prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)");
-        foreach ($_POST['roles'] as $roleId) {
-            $roleStmt->execute([$userId, $roleId]);
-        }
+    if ($result['errors']) {
+        saveFormState($result['errors']);
+        to('modules/users/create.php');
     }
 
-    logAudit($_SESSION['user_id'], 'create', 'users');
-    flash('success', 'User created successfully');
+    $attached = $result['person_id'] > 0
+        ? ' Linked to directory entry ' . $result['person_code'] . '.'
+        : '';
+    flash('success', 'User created successfully.' . $attached);
     to('modules/users/index.php');
 }
 
@@ -86,7 +66,8 @@ $roles = $db->query("SELECT * FROM roles WHERE deleted_at IS NULL")->fetchAll();
         </div>
     <?php endif; ?>
 
-    <form method="POST" id="userForm" class="space-y-4">
+    <form method="POST" id="userForm" class="space-y-4" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Name <span class="text-red-600">*</span></labe>
             <input type="text" id="name" name="name" value="<?= old('name') ?>" required
