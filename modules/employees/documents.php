@@ -214,7 +214,10 @@ $slotDocs = employeeSlotDocuments($db, $id);
 
             <ul class="space-y-3">
                 <?php foreach (employeeDocSlots() as $slot => $label): ?>
-                <?php $doc = $slotDocs[$slot] ?? null; ?>
+                <?php
+                    if (!employeeSlotAllowedForNationality($slot, $emp['nationality'] ?? '')) { continue; }
+                    $doc = $slotDocs[$slot] ?? null;
+                ?>
                 <li class="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <span class="text-sm text-gray-700"><?= $label ?></span>
                     <?php if ($doc): ?>

@@ -35,6 +35,32 @@ $statusColors = ['draft' => 'bg-gray-100 text-gray-800', 'sent' => 'bg-blue-100 
     <?php endif; ?>
 </div>
 
+<?php
+// Invoices carry no company_id, so the issuer is the company in context.
+$issuerLogo = function_exists('activeCompanyLogoUrl') ? activeCompanyLogoUrl() : null;
+$issuer = function_exists('activeCompany') ? (activeCompany() ?: []) : [];
+?>
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+            <?php if ($issuerLogo): ?>
+            <img src="<?= htmlspecialchars($issuerLogo) ?>" alt="<?= sanitize($issuer['company_name'] ?? '') ?> logo"
+                 class="h-14 max-w-[180px] object-contain">
+            <?php endif; ?>
+            <div>
+                <p class="font-semibold text-gray-800"><?= sanitize($issuer['company_name'] ?? '') ?></p>
+                <?php if (!empty($issuer['vat_number'])): ?>
+                <p class="text-sm text-gray-500">VAT <?= sanitize($issuer['vat_number']) ?></p>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="text-right">
+            <h2 class="text-2xl font-bold text-gray-800">INVOICE</h2>
+            <p class="text-gray-500"><?= sanitize($invoice['invoice_number']) ?></p>
+        </div>
+    </div>
+</div>
+
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
     <div class="bg-white rounded-lg shadow p-6">
         <h2 class="text-lg font-semibold text-gray-800 mb-4">Invoice Details</h2>

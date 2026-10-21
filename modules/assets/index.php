@@ -7,7 +7,7 @@ require_once '../../helpers/pagination.php';
 if (!hasPermission('assets.view')) { die('Access Denied'); }
 
 $db = getDB();
-$search = $_GET['search'] ?? '';
+$search = trim($_GET['search'] ?? '');
 $category_id = $_GET['category_id'] ?? '';
 $status = $_GET['status'] ?? '';
 $condition = $_GET['condition'] ?? '';
@@ -17,14 +17,20 @@ $perPage = 15;
 $where = "WHERE 1=1";
 $params = [];
 
+// The KPI cards, the list and the search all read this one fragment, so they
+// cannot disagree about which rows are in scope.
+$companyFilter = applyCompanyScope('a.company_id', $where, $params);
+
 if ($search) { $where .= " AND (a.asset_code LIKE ? OR a.asset_name LIKE ? OR a.serial_number LIKE ?)"; $params[] = "%$search%"; $params[] = "%$search%"; $params[] = "%$search%"; }
 if ($category_id) { $where .= " AND a.category_id = ?"; $params[] = $category_id; }
 if ($status) { $where .= " AND a.status = ?"; $params[] = $status; }
 if ($condition) { $where .= " AND a.asset_condition = ?"; $params[] = $condition; }
 
+$hasFilters = ($search !== '' || $category_id !== '' || $status !== '' || $condition !== '' || array_key_exists('company_id', $_GET));
+
 $countStmt = $db->prepare("SELECT COUNT(*) as cnt FROM assets a $where");
 $countStmt->execute($params);
-$total = $countStmt->fetch()['cnt'];
+$total = (int) $countStmt->fetch()['cnt'];
 $pagination = paginate($total, $perPage, $page);
 
 $queryParams = array_merge($params, [$perPage, $pagination['offset']]);
@@ -39,6 +45,17 @@ $stmt->execute($queryParams);
 $assets = $stmt->fetchAll();
 
 $categories = $db->query("SELECT id, category_name FROM asset_categories WHERE status = 'active' ORDER BY category_name")->fetchAll();
+
+// Counters are derived from the filtered set so the cards never contradict the list below.
+$statusCounts = array_fill_keys(['available', 'assigned', 'maintenance', 'damaged', 'lost', 'retired'], 0);
+$statusStmt = $db->prepare("SELECT a.status, COUNT(*) as c FROM assets a $where GROUP BY a.status");
+$statusStmt->execute($params);
+foreach ($statusStmt->fetchAll() as $row) {
+    if (isset($statusCounts[$row['status']])) $statusCounts[$row['status']] = (int) $row['c'];
+}
+$expiringStmt = $db->prepare("SELECT COUNT(*) as c FROM assets a $where AND a.warranty_expiry BETWEEN CURRENT_DATE AND DATE_ADD(CURRENT_DATE, INTERVAL 30 DAY)");
+$expiringStmt->execute($params);
+$expiring = (int) $expiringStmt->fetch()['c'];
 
 $statusColors = ['available' => 'bg-green-100 text-green-800', 'assigned' => 'bg-blue-100 text-blue-800', 'maintenance' => 'bg-yellow-100 text-yellow-800', 'damaged' => 'bg-red-100 text-red-800', 'lost' => 'bg-gray-100 text-gray-800', 'retired' => 'bg-red-200 text-red-800'];
 $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-100 text-green-800', 'fair' => 'bg-yellow-100 text-yellow-800', 'damaged' => 'bg-red-100 text-red-800'];
@@ -55,28 +72,21 @@ $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-10
 </div>
 
 <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-    <?php
-    $totalAssets = $db->query("SELECT COUNT(*) as c FROM assets")->fetch()['c'];
-    $available = $db->query("SELECT COUNT(*) as c FROM assets WHERE status = 'available'")->fetch()['c'];
-    $assigned = $db->query("SELECT COUNT(*) as c FROM assets WHERE status = 'assigned'")->fetch()['c'];
-    $maintenance = $db->query("SELECT COUNT(*) as c FROM assets WHERE status = 'maintenance'")->fetch()['c'];
-    $expiring = $db->query("SELECT COUNT(*) as c FROM assets WHERE warranty_expiry <= DATE_ADD(CURRENT_DATE, INTERVAL 30 DAY) AND warranty_expiry >= CURRENT_DATE")->fetch()['c'];
-    ?>
     <div class="bg-white rounded-lg shadow p-4">
         <div class="text-sm text-gray-500">Total Assets</div>
-        <div class="text-2xl font-bold text-gray-800"><?= $totalAssets ?></div>
+        <div class="text-2xl font-bold text-gray-800"><?= $total ?></div>
     </div>
     <div class="bg-white rounded-lg shadow p-4">
         <div class="text-sm text-gray-500">Available</div>
-        <div class="text-2xl font-bold text-green-600"><?= $available ?></div>
+        <div class="text-2xl font-bold text-green-600"><?= $statusCounts['available'] ?></div>
     </div>
     <div class="bg-white rounded-lg shadow p-4">
         <div class="text-sm text-gray-500">Assigned</div>
-        <div class="text-2xl font-bold text-blue-600"><?= $assigned ?></div>
+        <div class="text-2xl font-bold text-blue-600"><?= $statusCounts['assigned'] ?></div>
     </div>
     <div class="bg-white rounded-lg shadow p-4">
         <div class="text-sm text-gray-500">Maintenance</div>
-        <div class="text-2xl font-bold text-yellow-600"><?= $maintenance ?></div>
+        <div class="text-2xl font-bold text-yellow-600"><?= $statusCounts['maintenance'] ?></div>
     </div>
     <div class="bg-white rounded-lg shadow p-4">
         <div class="text-sm text-gray-500">Warranty Expiring</div>
@@ -91,15 +101,30 @@ $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-10
             <input type="text" name="search" value="<?= sanitize($search) ?>" placeholder="Asset code, name, serial..." class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
         </div>
         <div class="w-40">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Organisation</label>
+            <?php
+            $companySel = $companyFilter === null ? activeCompanyId() : (int) $companyFilter;
+            $allCompanies = count(companyOptions()) > 1;
+            ?>
+            <select name="company_id" onchange="this.form.submit()" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+                <?php if ($allCompanies): ?>
+                <option value="" <?= $companySel === 0 ? 'selected' : '' ?>>All companies</option>
+                <?php endif; ?>
+                <?php foreach (companyOptions() as $cid => $label): ?>
+                <option value="<?= (int) $cid ?>" <?= $companySel === (int) $cid ? 'selected' : '' ?>><?= sanitize($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="w-40">
             <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
-            <select name="category_id" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+            <select name="category_id" onchange="this.form.submit()" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
                 <option value="">All</option>
                 <?php foreach ($categories as $cat): ?><option value="<?= $cat['id'] ?>" <?= $category_id == $cat['id'] ? 'selected' : '' ?>><?= sanitize($cat['category_name']) ?></option><?php endforeach; ?>
             </select>
         </div>
         <div class="w-32">
             <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select name="status" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+            <select name="status" onchange="this.form.submit()" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
                 <option value="">All</option>
                 <option value="available" <?= $status === 'available' ? 'selected' : '' ?>>Available</option>
                 <option value="assigned" <?= $status === 'assigned' ? 'selected' : '' ?>>Assigned</option>
@@ -111,7 +136,7 @@ $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-10
         </div>
         <div class="w-32">
             <label class="block text-sm font-medium text-gray-700 mb-1">Condition</label>
-            <select name="condition" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+            <select name="condition" onchange="this.form.submit()" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
                 <option value="">All</option>
                 <option value="new" <?= $condition === 'new' ? 'selected' : '' ?>>New</option>
                 <option value="good" <?= $condition === 'good' ? 'selected' : '' ?>>Good</option>
@@ -119,7 +144,10 @@ $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-10
                 <option value="damaged" <?= $condition === 'damaged' ? 'selected' : '' ?>>Damaged</option>
             </select>
         </div>
-        <button type="submit" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"><i class="fas fa-search"></i></button>
+        <button type="submit" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"><i class="fas fa-search mr-1"></i>Search</button>
+        <?php if ($hasFilters): ?>
+        <a href="<?= url('modules/assets/index.php') ?>" class="px-4 py-2 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">Clear</a>
+        <?php endif; ?>
     </form>
 </div>
 
@@ -133,6 +161,8 @@ $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-10
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Serial #</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Condition</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Organisation</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Warranty</th>
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -150,6 +180,8 @@ $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-10
                 <td class="px-6 py-4">
                     <span class="px-2 py-1 text-xs rounded <?= $conditionColors[$asset['asset_condition']] ?? 'bg-gray-100' ?>"><?= ucfirst($asset['asset_condition']) ?></span>
                 </td>
+                <td class="px-6 py-4 text-gray-600"><?= sanitize($asset['location'] ?? '') ?: '-' ?></td>
+                <td class="px-6 py-4 text-gray-600"><?= sanitize(companyLabel($asset['company_id']) ?? '-') ?></td>
                 <td class="px-6 py-4 text-gray-600">
                     <?php if ($asset['warranty_expiry']): ?>
                         <?php if (strtotime($asset['warranty_expiry']) < time()): ?>
@@ -175,7 +207,7 @@ $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-10
             </tr>
             <?php endforeach; ?>
             <?php if (empty($assets)): ?>
-            <tr><td colspan="8" class="px-6 py-8 text-center text-gray-500">No assets found</td></tr>
+            <tr><td colspan="10" class="px-6 py-8 text-center text-gray-500">No assets found</td></tr>
             <?php endif; ?>
         </tbody>
     </table>

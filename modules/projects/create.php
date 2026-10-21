@@ -43,6 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'end_date' => 'required'
     ]);
 
+    // The chosen company owns the project, so it is mandatory and must be one
+    // the user is entitled to assign work to.
+    try {
+        $data['company_id'] = resolveCompanyForSave($_POST['company_id'] ?? '', true);
+    } catch (RuntimeException $e) {
+        $errors['company_id'] = $e->getMessage();
+    }
+
     if (!empty($errors)) {
         saveFormState($errors);
         to('modules/projects/create.php');
@@ -50,9 +58,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $projectCode = generateProjectCode($db);
 
-    $stmt = $db->prepare("INSERT INTO projects (project_code, project_name, client_name, description, start_date, end_date, estimated_hours, project_manager_id, status, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt = $db->prepare("INSERT INTO projects (project_code, company_id, project_name, client_name, description, start_date, end_date, estimated_hours, project_manager_id, status, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $projectCode,
+        $data['company_id'],
         $data['project_name'],
         $data['client_name'],
         $data['description'],
@@ -66,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     logAudit($_SESSION['user_id'], 'create_project', 'projects');
     flash('success', 'Project created successfully');
-    to('http://localhost/ERP/modules/projects/index.php');
+    to('modules/projects/index.php');
 }
 ?>
 
@@ -91,6 +100,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <form method="POST" id="createProjectForm" class="space-y-4" novalidate>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Company <span class="text-red-600">*</span></label>
+                <?= renderCompanySelect('company_id', old('company_id'), ['required' => true, 'blank' => 'Select Company']) ?>
+                <p class="text-xs text-gray-500 mt-1">The company that owns this project.</p>
+            </div>
+
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Project Name <span class="text-red-600">*</span></labe>
                     <input type="text" name="project_name" value="<?= old('project_name') ?>" required
@@ -317,6 +332,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             rules: {
 
+                company_id: {
+                    required: true
+                },
+
                 project_name: {
                     required: true,
                     minlength: 3,
@@ -358,6 +377,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             },
             messages: {
+
+                company_id: {
+                    required: "Company is required"
+                },
 
                 project_name: {
                     required: "Project Name is required",

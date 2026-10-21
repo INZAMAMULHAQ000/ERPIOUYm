@@ -1,0 +1,8 @@
+# The document builder is a maintenance tool, not a web resource.
+# Root .htaccess also rewrites ^docgen/ to 403; this is the belt-and-braces
+# fallback for hosts where the root rules are overridden.
+Order allow,deny
+Deny from all
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>

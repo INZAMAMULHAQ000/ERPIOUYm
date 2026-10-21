@@ -40,6 +40,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'category_id' => 'required'
     ]);
 
+    $location = trim($_POST['location'] ?? '');
+    if ($location !== '' && strlen($location) > 255) {
+        $errors['location'] = 'Location cannot exceed 255 characters.';
+    }
+
+    try {
+        $assetCompanyId = resolveCompanyForSave($_POST['company_id'] ?? '');
+    } catch (RuntimeException $e) {
+        $assetCompanyId = null;
+        $errors['company_id'] = $e->getMessage();
+    }
+
+    // An out-of-enum status would abort the UPDATE with a driver error, so the
+    // submitted value is constrained rather than trusted.
+    $allowedStatuses = ['available', 'assigned', 'maintenance', 'damaged', 'lost', 'retired'];
+    $postedStatus = $_POST['status'] ?? '';
+    $assetStatus = in_array($postedStatus, $allowedStatuses, true) ? $postedStatus : $asset['status'];
+
     if (!empty($errors)) {
         saveFormState($errors);
         to('modules/assets/edit.php?id=' . $id);
@@ -58,6 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             warranty_expiry = ?,
             asset_condition = ?,
             status = ?,
+            location = ?,
+            company_id = ?,
             notes = ?
         WHERE id = ?
     ");
@@ -73,14 +93,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_POST['vendor_id'] ?: null,
         $_POST['warranty_expiry'] ?: null,
         $_POST['asset_condition'],
-        $_POST['status'],
+        $assetStatus,
+        $location ?: null,
+        $assetCompanyId,
         $_POST['notes'] ?: null,
         $id
     ]);
 
     logAudit($_SESSION['user_id'], 'update_asset', 'assets');
     flash('success', 'Asset updated successfully');
-    to('http://localhost/ERP/modules/assets/index.php');
+    to('modules/assets/index.php');
 }
 ?>
 
@@ -243,6 +265,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php endforeach; ?>
 
                 </select>
+            </div>
+
+        </div>
+
+        <!-- Location / Organisation -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Location
+                </label>
+
+                <input
+                    type="text"
+                    name="location"
+                    value="<?= sanitize($asset['location'] ?? '') ?>"
+                    maxlength="255"
+                    placeholder="Building, floor, room or safe"
+                    class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+
+                <p class="text-xs text-gray-500 mt-1">Where the asset is physically kept.</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Organisation
+                </label>
+
+                <?= renderCompanySelect('company_id', $asset['company_id'] ?? '', ['blank' => 'Select Company']) ?>
+
+                <p class="text-xs text-gray-500 mt-1">Which company the asset belongs to.</p>
             </div>
 
         </div>

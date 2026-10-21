@@ -19,6 +19,7 @@ RewriteRule ^helpers/ - [F,L]
 RewriteRule ^middleware/ - [F,L]
 RewriteRule ^templates/ - [F,L]
 RewriteRule ^database/ - [F,L]
+RewriteRule ^docgen/ - [F,L]
 
 # ——— Security: CLI-only maintenance & seeding scripts ———
 # These run DDL and seed SQL and carry no session check, so they must not be

@@ -390,6 +390,16 @@ if (
         'cn_total' => $cnTotal,
     ];
 }
+
+/*
+ * Issuing company for the printed header. $companyName and $companyTaxNumber
+ * were referenced below but never assigned, so every statement printed
+ * "Your Company" with no logo.
+ */
+$statementCompany = function_exists('activeCompany') ? (activeCompany() ?: []) : [];
+$companyName      = $statementCompany['company_name'] ?? ($statementCompany['legal_name'] ?? 'Your Company');
+$companyTaxNumber = $statementCompany['vat_number'] ?? ($statementCompany['tax_number'] ?? '');
+$companyLogo      = companyLogoUrl($statementCompany['logo_path'] ?? '');
 ?>
 
 <!--
@@ -576,6 +586,11 @@ if (
 
 
             <div class="text-right">
+
+                <?php if ($companyLogo): ?>
+                    <img src="<?= htmlspecialchars($companyLogo) ?>" alt="<?= sanitize($companyName) ?> logo"
+                         class="inline-block max-h-16 max-w-[200px] object-contain mb-2">
+                <?php endif; ?>
 
                 <p class="font-semibold text-gray-800">
                     <?= sanitize($companyName ?? 'Your Company') ?>

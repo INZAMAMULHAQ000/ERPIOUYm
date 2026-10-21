@@ -114,6 +114,7 @@ function contractorContractInput($post)
         'department_id'        => (int) ($post['department_id'] ?? 0) ?: null,
         'designation_id'       => (int) ($post['designation_id'] ?? 0) ?: null,
         'contractual_job_title'=> trim((string) ($post['contractual_job_title'] ?? '')),
+        'company_id'           => (int) ($post['company_id'] ?? 0) ?: null,
         'project_id'           => (int) ($post['project_id'] ?? 0) ?: null,
         'manager_employee_id'  => (int) ($post['manager_employee_id'] ?? 0) ?: null,
         'purchase_order_id'    => (int) ($post['purchase_order_id'] ?? 0) ?: null,
@@ -169,6 +170,35 @@ function contractorContractErrors($data, $rawInput, $db = null)
 
     if ($data['supply_source'] === 'agency' && !$data['agency_vendor_id']) {
         $errors['agency_vendor_id'] = 'An agency-supplied contractor must name the supplying vendor';
+    }
+
+    /*
+     * The company drives which manager and project may be chosen. The browser
+     * only offers valid pairs, but the browser is not the authority, so a
+     * hand-built post that crosses companies is rejected here.
+     */
+    if (empty($data['company_id'])) {
+        $errors['company_id'] = 'Choose the company this engagement belongs to';
+    } elseif (function_exists('companyOptions') && !array_key_exists((int) $data['company_id'], companyOptions())) {
+        $errors['company_id'] = 'You are not permitted to assign engagements to that company';
+    } elseif ($db instanceof PDO && !isset($errors['company_id'])) {
+        $checks = [
+            'project_id'          => ['projects', 'Project'],
+            'manager_employee_id' => ['employees', 'Reporting Manager'],
+        ];
+        foreach ($checks as $field => [$table, $label]) {
+            if (empty($data[$field])) {
+                continue;
+            }
+            $stmt = $db->prepare("SELECT company_id FROM `$table` WHERE id = ? LIMIT 1");
+            $stmt->execute([(int) $data[$field]]);
+            $owner = $stmt->fetchColumn();
+            if ($owner === false) {
+                $errors[$field] = $label . ' no longer exists';
+            } elseif ((int) $owner !== (int) $data['company_id']) {
+                $errors[$field] = $label . ' does not belong to the selected company';
+            }
+        }
     }
 
     if ($data['contract_type'] === 'purchase_order' && !$data['purchase_order_id'] && $data['po_reference'] === '') {
@@ -323,7 +353,7 @@ function contractorSaveContract($db, array $data, $contractorId, $contractId = 0
 {
     $columns = [
         'title', 'contract_type', 'scope_of_work', 'supply_source', 'agency_vendor_id',
-        'department_id', 'designation_id', 'contractual_job_title', 'project_id', 'manager_employee_id',
+        'department_id', 'designation_id', 'contractual_job_title', 'company_id', 'project_id', 'manager_employee_id',
         'purchase_order_id', 'po_reference', 'start_date', 'end_date', 'work_arrangement', 'fte_allocation',
         'rate_basis', 'rate_amount', 'currency_code', 'estimated_value', 'not_to_exceed_amount',
         'billing_frequency', 'payment_terms', 'timesheet_required', 'security_clearance', 'badge_number',
@@ -339,9 +369,11 @@ function contractorSaveContract($db, array $data, $contractorId, $contractId = 0
         $bind['rate_amount'] = null;
     }
 
-    $company = null;
-    if (function_exists('activeCompanyId')) {
-        $company = activeCompanyId() ?: null;
+    // An explicitly chosen company wins; the active one is only the default for
+    // callers that never surface the field.
+    $bind['company_id'] = $data['company_id'] ?? null;
+    if (!$bind['company_id'] && function_exists('activeCompanyId')) {
+        $bind['company_id'] = activeCompanyId() ?: null;
     }
 
     try {
@@ -355,8 +387,9 @@ function contractorSaveContract($db, array $data, $contractorId, $contractId = 0
         }
 
         $number = contractorAllocateNumber($db, 'contractor_contract', 'contractor_contracts', 'contract_number');
-        $cols = array_merge(['contractor_id', 'contract_number', 'company_id', 'status', 'created_at', 'created_by'], $columns);
-        $vals = array_merge([$contractorId, $number, $company, 'draft', date('Y-m-d H:i:s'), $userId], array_values($bind));
+        // company_id is already in $columns, so it must not be merged in twice.
+        $cols = array_merge(['contractor_id', 'contract_number', 'status', 'created_at', 'created_by'], $columns);
+        $vals = array_merge([$contractorId, $number, 'draft', date('Y-m-d H:i:s'), $userId], array_values($bind));
         $ph = implode(', ', array_fill(0, count($cols), '?'));
         $db->prepare("INSERT INTO contractor_contracts (`" . implode('`, `', $cols) . "`) VALUES ($ph)")->execute($vals);
         return ['id' => (int) $db->lastInsertId(), 'number' => $number, 'error' => null];

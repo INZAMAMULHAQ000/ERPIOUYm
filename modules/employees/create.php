@@ -93,6 +93,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ]);
     $errors += employeeIdErrors($data, $_POST);
 
+    try {
+        $data['company_id'] = resolveCompanyForSave($_POST['company_id'] ?? '');
+    } catch (RuntimeException $e) {
+        $data['company_id'] = null;
+        $errors['company_id'] = $e->getMessage();
+    }
+
     if (empty($errors)) {
         $checkStmt = $db->prepare("SELECT id FROM employees WHERE email = ?");
         $checkStmt->execute([$data['email']]);
@@ -114,12 +121,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $db->prepare("INSERT INTO employees (
                 employee_code, first_name, last_name, gender, date_of_birth, marital_status,
-                nationality, passport_number, passport_expiry, visa_type, visa_number, visa_expiry,
+                nationality, aadhaar_number, pan_number,
+                passport_number, passport_expiry, visa_type, visa_number, visa_expiry,
                 emirates_id_number, emirates_id_expiry,
                 joining_date, contract_number, contract_start_date, contract_end_date,
                 phone, email, address, department_id, designation_id,
-                employment_type, reporting_manager_id, work_location, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                employment_type, reporting_manager_id, work_location, company_id, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
             $stmt->execute([
                 $employeeCode,
@@ -129,6 +137,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $data['date_of_birth'] ?: null,
                 $data['marital_status'],
                 $data['nationality'] ?: null,
+                $data['aadhaar_number'] ?: null,
+                $data['pan_number'] ?: null,
                 $data['passport_number'] ?: null,
                 $data['passport_expiry'] ?: null,
                 $data['visa_type'] ?: null,
@@ -148,6 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $data['employment_type'],
                 $data['reporting_manager_id'] ?: null,
                 $data['work_location'],
+                $data['company_id'],
                 $data['status']
             ]);
 
@@ -192,7 +203,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // that fails here is reported on the edit form rather than rolled back.
         $uploadErrors = [];
         foreach (array_keys(employeeDocSlots()) as $slot) {
-            $message = employeeSaveSlot($db, $employeeId, $slot, $_FILES[$slot] ?? null, !empty($_POST['remove_' . $slot]), $_SESSION['user_id']);
+            $allowed = employeeSlotAllowedForNationality($slot, $data['nationality']);
+            $message = employeeSaveSlot(
+                $db,
+                $employeeId,
+                $slot,
+                $allowed ? ($_FILES[$slot] ?? null) : null,
+                $allowed ? !empty($_POST['remove_' . $slot]) : true,
+                $_SESSION['user_id']
+            );
             if ($message !== null) {
                 $uploadErrors[$slot] = $message;
             }
@@ -352,16 +371,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Work Location</label>
-                    <input type="text" id="work_location" name="work_location" value="<?= old('work_location') ?>"
-                        class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
                     <select name="status" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
                         <option value="active" <?= old('status') === 'active' ? 'selected' : '' ?>>Active</option>
                         <option value="inactive" <?= old('status') === 'inactive' ? 'selected' : '' ?>>Inactive</option>
                     </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Work Location</label>
+                    <input type="text" id="work_location" name="work_location" value="<?= old('work_location') ?>"
+                        class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Company</label>
+                    <?= renderCompanySelect('company_id', old('company_id'), ['blank' => 'Select Company']) ?>
+                    <p class="text-xs text-gray-500 mt-1">The registered company this employee belongs to.</p>
                 </div>
             </div>
         </div>
@@ -423,6 +447,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
         /*
+         * Aadhaar: exactly 11 digits, separators tolerated while typing
+         */
+        $.validator.addMethod("aadhaarNumber", function(value, element) {
+            return this.optional(element) || /^\d{11}$/.test(String(value).replace(/\D/g, ""));
+        }, "Aadhaar Number must be exactly 11 digits");
+
+
+        /*
+         * PAN: five letters, four digits, one letter
+         */
+        $.validator.addMethod("panNumber", function(value, element) {
+            return this.optional(element) || /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(String(value).trim());
+        }, "PAN must be 5 letters, 4 digits and 1 letter (e.g. ABCDE1234F)");
+
+
+        /*
          * First Name
          * Remove numbers and special characters while typing/pasting
          */
@@ -468,11 +508,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
         /*
-         * Nationality
-         * Letters and spaces only
+         * Aadhaar - digits, grouped in threes for readability
+         * PAN - letters and digits, forced upper-case
          */
-        $("#nationality").on("input", function() {
-            this.value = this.value.replace(/[^A-Za-z ]/g, "");
+        $("#aadhaar_number").on("input", function() {
+            this.value = this.value.replace(/\D/g, "").slice(0, 11);
+        });
+
+        $("#pan_number").on("input", function() {
+            this.value = this.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 10);
         });
 
 
@@ -507,7 +551,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
          * Document scans
          * Client-side size gate so an oversized file is rejected before upload
          */
-        $("#passport_copy, #visa_copy, #emirates_id_copy, #employment_contract_copy").on("change", function() {
+        $("#passport_copy, #visa_copy, #emirates_id_copy, #employment_contract_copy, #aadhaar_copy, #pan_copy").on("change", function() {
             if (this.files.length && this.files[0].size > 5 * 1024 * 1024) {
                 alert(this.files[0].name + " is larger than 5 MB.");
                 this.value = "";
@@ -589,9 +633,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     maxlength: 100
                 },
 
-                nationality: {
-                    maxlength: 100,
-                    lettersOnly: true
+                // Nationality comes from a controlled dropdown now, so the old
+                // lettersOnly rule is gone — it rejected valid entries such as
+                // "Timor-Leste" and "Congo (Democratic Republic)".
+                aadhaar_number: {
+                    aadhaarNumber: true
+                },
+
+                pan_number: {
+                    panNumber: true
                 },
 
                 passport_number: {
@@ -666,11 +716,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 employment_type: {
                     required: "Please select employment type"
-                },
-
-                nationality: {
-                    lettersOnly: "Nationality can contain letters and spaces only",
-                    maxlength: "Nationality must not exceed 100 characters"
                 },
 
                 passport_number: {

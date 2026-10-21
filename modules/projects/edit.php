@@ -142,6 +142,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /*
     |--------------------------------------------------------------------------
+    | COMPANY
+    |--------------------------------------------------------------------------
+    |
+    | Re-parenting a project is allowed, but only onto a company the user is
+    | entitled to. Without this the column stays whatever it was.
+    |
+    |--------------------------------------------------------------------------
+    */
+
+    try {
+        $data['company_id'] = resolveCompanyForSave($_POST['company_id'] ?? '', true);
+    } catch (RuntimeException $e) {
+        $errors['company_id'] = $e->getMessage();
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
     | IF ERRORS
     |--------------------------------------------------------------------------
     */
@@ -163,6 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt = $db->prepare("
         UPDATE projects
         SET
+            company_id = ?,
             project_name = ?,
             client_name = ?,
             description = ?,
@@ -177,6 +196,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
     $stmt->execute([
+
+        $data['company_id'],
 
         $data['project_name'],
 
@@ -286,6 +307,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     >
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+
+            <!-- COMPANY -->
+
+            <div>
+
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+
+                    Company
+
+                    <span class="text-red-600">*</span>
+
+                </label>
+
+                <?= renderCompanySelect('company_id', old('company_id', $project['company_id']), ['required' => true, 'blank' => 'Select Company']) ?>
+
+                <p class="text-xs text-gray-500 mt-1">The company that owns this project.</p>
+
+            </div>
 
 
             <!-- PROJECT NAME -->
@@ -904,6 +944,12 @@ $(document).ready(function () {
 
         rules: {
 
+            company_id: {
+
+                required: true
+
+            },
+
             project_name: {
 
                 required: true,
@@ -976,6 +1022,13 @@ $(document).ready(function () {
 
 
         messages: {
+
+            company_id: {
+
+                required:
+                    "Company is required"
+
+            },
 
             project_name: {
 

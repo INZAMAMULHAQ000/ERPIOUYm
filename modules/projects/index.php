@@ -9,7 +9,7 @@ if (!hasPermission('projects.view')) {
 }
 
 $db = getDB();
-$search = $_GET['search'] ?? '';
+$search = trim($_GET['search'] ?? '');
 $status = $_GET['status'] ?? '';
 $priority = $_GET['priority'] ?? '';
 $page = getPageNumber();
@@ -17,6 +17,8 @@ $perPage = 15;
 
 $where = "WHERE 1=1";
 $params = [];
+
+$companyFilter = applyCompanyScope('p.company_id', $where, $params);
 
 if ($search) {
     $where .= " AND (p.project_name LIKE ? OR p.project_code LIKE ? OR p.client_name LIKE ?)";
@@ -35,9 +37,11 @@ if ($priority) {
     $params[] = $priority;
 }
 
+$hasFilters = ($search !== '' || $status !== '' || $priority !== '' || array_key_exists('company_id', $_GET));
+
 $countStmt = $db->prepare("SELECT COUNT(*) as cnt FROM projects p $where");
 $countStmt->execute($params);
-$total = $countStmt->fetch()['cnt'];
+$total = (int) $countStmt->fetch()['cnt'];
 
 $pagination = paginate($total, $perPage, $page);
 
@@ -50,6 +54,14 @@ $stmt = $db->prepare("
 ");
 $stmt->execute($queryParams);
 $projects = $stmt->fetchAll();
+
+// Counters read the same filtered set as the cards below, so they cannot drift.
+$statusCounts = array_fill_keys(['planning', 'active', 'on_hold', 'completed', 'cancelled'], 0);
+$statusStmt = $db->prepare("SELECT p.status, COUNT(*) as c FROM projects p $where GROUP BY p.status");
+$statusStmt->execute($params);
+foreach ($statusStmt->fetchAll() as $row) {
+    if (isset($statusCounts[$row['status']])) $statusCounts[$row['status']] = (int) $row['c'];
+}
 
 $statusColors = ['planning' => 'bg-blue-100 text-blue-800', 'active' => 'bg-green-100 text-green-800', 'on_hold' => 'bg-yellow-100 text-yellow-800', 'completed' => 'bg-purple-100 text-purple-800', 'cancelled' => 'bg-red-100 text-red-800'];
 $priorityColors = ['low' => 'bg-gray-100 text-gray-800', 'medium' => 'bg-blue-100 text-blue-800', 'high' => 'bg-orange-100 text-orange-800', 'critical' => 'bg-red-100 text-red-800'];
@@ -71,9 +83,9 @@ $priorityColors = ['low' => 'bg-gray-100 text-gray-800', 'medium' => 'bg-blue-10
     <?php
     $stats = [
         ['label' => 'Total Projects', 'value' => $total, 'color' => 'blue'],
-        ['label' => 'Active', 'value' => $db->query("SELECT COUNT(*) as c FROM projects WHERE status = 'active'")->fetch()['c'], 'color' => 'green'],
-        ['label' => 'Planning', 'value' => $db->query("SELECT COUNT(*) as c FROM projects WHERE status = 'planning'")->fetch()['c'], 'color' => 'yellow'],
-        ['label' => 'Completed', 'value' => $db->query("SELECT COUNT(*) as c FROM projects WHERE status = 'completed'")->fetch()['c'], 'color' => 'purple']
+        ['label' => 'Active', 'value' => $statusCounts['active'], 'color' => 'green'],
+        ['label' => 'Planning', 'value' => $statusCounts['planning'], 'color' => 'yellow'],
+        ['label' => 'Completed', 'value' => $statusCounts['completed'], 'color' => 'purple']
     ];
     foreach ($stats as $stat): ?>
     <div class="bg-white rounded-lg shadow p-4">
@@ -90,9 +102,19 @@ $priorityColors = ['low' => 'bg-gray-100 text-gray-800', 'medium' => 'bg-blue-10
             <input type="text" name="search" value="<?= sanitize($search) ?>" placeholder="Project name, code..." 
                 class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
         </div>
+        <div class="w-48">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Company</label>
+            <?php $companySel = $companyFilter === null ? activeCompanyId() : (int) $companyFilter; ?>
+            <select name="company_id" onchange="this.form.submit()" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+                <option value="" <?= $companySel === 0 ? 'selected' : '' ?>>All companies</option>
+                <?php foreach (companyOptions() as $cid => $label): ?>
+                <option value="<?= (int) $cid ?>" <?= $companySel === (int) $cid ? 'selected' : '' ?>><?= sanitize($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <div class="w-40">
             <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select name="status" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+            <select name="status" onchange="this.form.submit()" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
                 <option value="">All</option>
                 <option value="planning" <?= $status === 'planning' ? 'selected' : '' ?>>Planning</option>
                 <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Active</option>
@@ -103,7 +125,7 @@ $priorityColors = ['low' => 'bg-gray-100 text-gray-800', 'medium' => 'bg-blue-10
         </div>
         <div class="w-40">
             <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-            <select name="priority" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+            <select name="priority" onchange="this.form.submit()" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
                 <option value="">All</option>
                 <option value="low" <?= $priority === 'low' ? 'selected' : '' ?>>Low</option>
                 <option value="medium" <?= $priority === 'medium' ? 'selected' : '' ?>>Medium</option>
@@ -112,8 +134,11 @@ $priorityColors = ['low' => 'bg-gray-100 text-gray-800', 'medium' => 'bg-blue-10
             </select>
         </div>
         <button type="submit" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
-            <i class="fas fa-search"></i>
+            <i class="fas fa-search mr-1"></i>Search
         </button>
+        <?php if ($hasFilters): ?>
+        <a href="<?= url('modules/projects/index.php') ?>" class="px-4 py-2 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">Clear</a>
+        <?php endif; ?>
     </form>
 </div>
 
@@ -132,7 +157,8 @@ $priorityColors = ['low' => 'bg-gray-100 text-gray-800', 'medium' => 'bg-blue-10
                 </span>
             </div>
             <p class="text-sm text-gray-500 mb-3"><?= sanitize($proj['project_code']) ?></p>
-            <p class="text-sm text-gray-600 mb-4"><?= sanitize($proj['client_name'] ?? 'No client') ?></p>
+            <p class="text-sm text-gray-600 mb-1"><?= sanitize($proj['client_name'] ?? 'No client') ?></p>
+            <p class="text-xs text-gray-500 mb-4"><i class="fas fa-building mr-1"></i><?= sanitize(companyLabel($proj['company_id']) ?? 'No company') ?></p>
             
             <div class="flex items-center justify-between text-sm text-gray-500 mb-4">
                 <span><i class="fas fa-user mr-1"></i> <?= sanitize($proj['manager_first_name'] ?? '-') ?></span>

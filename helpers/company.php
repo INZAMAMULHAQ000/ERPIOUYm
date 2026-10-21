@@ -8,6 +8,40 @@
  */
 
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/url.php';
+
+if (!function_exists('companyLogoUrl')) {
+    /**
+     * Public URL for a companies.logo_path value, or null when there is none.
+     *
+     * The column holds either an uploaded path relative to the app root or, for
+     * rows created before uploads existed, an external URL. url() passes
+     * absolute URLs straight through and prefixes everything else with BASE_URL,
+     * so both render from any directory and on any host.
+     */
+    function companyLogoUrl($logoPath) {
+        $value = trim((string) $logoPath);
+        if ($value === '') { return null; }
+        return isAbsoluteUrl($value) ? $value : url($value);
+    }
+}
+
+if (!function_exists('activeCompanyLogoUrl')) {
+    /** Logo for the company a document is being produced for. */
+    function activeCompanyLogoUrl($companyId = null) {
+        $id = $companyId === null ? (int) activeCompanyId() : (int) $companyId;
+        if ($id <= 0) { return null; }
+        static $cache = [];
+        if (array_key_exists($id, $cache)) { return $cache[$id]; }
+        try {
+            $s = getDB()->prepare("SELECT logo_path FROM companies WHERE id = ? AND deleted_at IS NULL");
+            $s->execute([$id]);
+            return $cache[$id] = companyLogoUrl($s->fetchColumn());
+        } catch (Throwable $e) {
+            return $cache[$id] = null;
+        }
+    }
+}
 
 if (!function_exists('appSetting')) {
     /** Typed accessor for the app_settings table. Cached per request. */
@@ -118,6 +152,217 @@ if (!function_exists('companyFilterSql')) {
         return $allowNull
             ? " ($column IS NULL OR $column = ?)"
             : " $column = ?";
+    }
+}
+
+if (!function_exists('accessibleCompanies')) {
+    /**
+     * Companies the signed-in user may own records in.
+     *
+     * Same rule as activeCompany() and CompanyService: role 1 (Super Admin) sees
+     * every active company, everyone else only their user_companies grants. Kept
+     * here rather than in the finance service because every module loads helpers.
+     */
+    function accessibleCompanies() {
+        static $cache = null;
+        if ($cache !== null) { return $cache; }
+        $db = getDB();
+        $uid = (int) ($_SESSION['user_id'] ?? 0);
+        try {
+            if ($uid && activeCompanyIsSuperAdmin($uid)) {
+                $rows = $db->query("
+                    SELECT id, company_code, company_name FROM companies
+                    WHERE deleted_at IS NULL AND status = 'active'
+                    ORDER BY is_default DESC, company_name ASC
+                ")->fetchAll();
+            } else {
+                $s = $db->prepare("
+                    SELECT c.id, c.company_code, c.company_name
+                    FROM user_companies uc
+                    JOIN companies c ON c.id = uc.company_id
+                    WHERE uc.user_id = ? AND c.deleted_at IS NULL AND c.status = 'active'
+                    ORDER BY c.is_default DESC, c.company_name ASC
+                ");
+                $s->execute([$uid]);
+                $rows = $s->fetchAll();
+            }
+        } catch (Throwable $e) {
+            error_log('accessibleCompanies failed: ' . $e->getMessage());
+            $rows = [];
+        }
+        // A user with no grants must still be able to transact against the
+        // company they actually resolve to, or the dropdown would be empty.
+        if (!$rows) {
+            $active = activeCompany();
+            if ($active) {
+                $rows = [[
+                    'id' => $active['id'],
+                    'company_code' => $active['company_code'],
+                    'company_name' => $active['company_name'],
+                ]];
+            }
+        }
+        return $cache = $rows;
+    }
+}
+
+if (!function_exists('activeCompanyIsSuperAdmin')) {
+    function activeCompanyIsSuperAdmin($userId = null) {
+        $uid = (int) ($userId ?? ($_SESSION['user_id'] ?? 0));
+        if (!$uid) { return false; }
+        try {
+            $s = getDB()->prepare("SELECT COUNT(*) FROM user_roles WHERE user_id = ? AND role_id = 1");
+            $s->execute([$uid]);
+            return (int) $s->fetchColumn() > 0;
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+}
+
+if (!function_exists('companyOptions')) {
+    /** [id => label] for the companies the user may select. */
+    function companyOptions() {
+        $out = [];
+        foreach (accessibleCompanies() as $c) {
+            $label = (string) $c['company_name'];
+            $code = trim((string) ($c['company_code'] ?? ''));
+            $out[(int) $c['id']] = $code !== '' ? "$label ($code)" : $label;
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('resolveCompanyForSave')) {
+    /**
+     * The company a submitted form is allowed to write.
+     *
+     * The dropdown is only a convenience — the posted value is attacker
+     * controlled, so a form must never persist `$_POST['company_id']` directly.
+     * An out-of-scope id is rejected rather than silently swapped, because a
+     * record landing in the wrong company is a bookkeeping error, not a typo.
+     *
+     * @return int|null  null means "no company selected".
+     * @throws RuntimeException when the selection is not the user's to make.
+     */
+    function resolveCompanyForSave($posted, $required = false) {
+        $options = companyOptions();
+        $id = (int) $posted;
+
+        if ($id <= 0) {
+            if ($required) {
+                throw new RuntimeException('A company must be selected.');
+            }
+            return null;
+        }
+        if (!array_key_exists($id, $options)) {
+            throw new RuntimeException('You are not permitted to assign records to that company.');
+        }
+        return $id;
+    }
+}
+
+if (!function_exists('renderCompanySelect')) {
+    /**
+     * Company dropdown shared by every module that owns records per company, so
+     * the access rule, blank option and selected state are not re-implemented
+     * per form.
+     *
+     * @param array $attrs  name/class/id/required/onchange/blank/placeholder
+     */
+    function renderCompanySelect($name = 'company_id', $selected = null, array $attrs = []) {
+        $options = companyOptions();
+        $class   = $attrs['class'] ?? 'w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500';
+        $id      = $attrs['id'] ?? $name;
+        $blank   = array_key_exists('blank', $attrs) ? (string) $attrs['blank'] : 'Select Company';
+        $onchange = $attrs['onchange'] ?? '';
+        $required = !empty($attrs['required']);
+        $extra = '';
+        // Pass through any data-* attribute; cascading dropdowns key off these.
+        foreach ($attrs as $k => $v) {
+            if (strpos($k, 'data-') === 0) {
+                $extra .= ' ' . $k . '="' . htmlspecialchars((string) $v, ENT_QUOTES) . '"';
+            }
+        }
+
+        $html  = '<select name="' . htmlspecialchars($name, ENT_QUOTES) . '" id="' . htmlspecialchars($id, ENT_QUOTES) . '"';
+        $html .= ' class="' . htmlspecialchars($class, ENT_QUOTES) . '"';
+        if ($required) { $html .= ' required'; }
+        if ($onchange !== '') { $html .= ' onchange="' . htmlspecialchars($onchange, ENT_QUOTES) . '"'; }
+        $html .= $extra . '>' . PHP_EOL;
+        if ($blank !== '') {
+            $html .= '    <option value="">' . htmlspecialchars($blank, ENT_QUOTES) . '</option>' . PHP_EOL;
+        }
+
+        // One option only means there is nothing to choose, so preselect it and
+        // still submit it — hiding it would drop the value from the POST body.
+        if (count($options) === 1 && empty($attrs['force_list'])) {
+            $onlyId = (int) array_key_first($options);
+            $html .= '    <option value="' . $onlyId . '" selected>' . htmlspecialchars($options[$onlyId], ENT_QUOTES) . '</option>' . PHP_EOL;
+            $html .= '</select>';
+            return $html;
+        }
+
+        $current = $selected === null || $selected === '' ? activeCompanyId() : (int) $selected;
+        foreach ($options as $oid => $label) {
+            $sel = ((int) $oid === $current) ? ' selected' : '';
+            $html .= '    <option value="' . (int) $oid . '"' . $sel . '>' . htmlspecialchars((string) $label, ENT_QUOTES) . '</option>' . PHP_EOL;
+        }
+        $html .= '</select>';
+        return $html;
+    }
+}
+
+if (!function_exists('companyLabel')) {
+    /** Display name for a stored company_id, without assuming it is accessible. */
+    function companyLabel($companyId) {
+        $id = (int) $companyId;
+        if ($id <= 0) { return null; }
+        static $labels = null;
+        if ($labels === null) {
+            $labels = [];
+            try {
+                foreach (getDB()->query("SELECT id, company_name FROM companies")->fetchAll() as $r) {
+                    $labels[(int) $r['id']] = $r['company_name'];
+                }
+            } catch (Throwable $e) {
+                $labels = [];
+            }
+        }
+        return $labels[$id] ?? ('#' . $id);
+    }
+}
+
+if (!function_exists('applyCompanyScope')) {
+    /**
+     * Company predicate for a list view.
+     *
+     * Three states, so a reviewer is never stuck:
+     *   no ?company_id     -> scope to the active company (the navbar switcher)
+     *   ?company_id=<id>   -> narrow to that company, if the user may see it
+     *   ?company_id=       -> widen to every company the user can access
+     *
+     * An out-of-scope id degrades to "all accessible" rather than silently
+     * showing another company's rows.
+     *
+     * @return int|null  null when scoping to the active company, else the id
+     *                   the filter should render as selected (0 = all).
+     */
+    function applyCompanyScope($column, &$where, &$params) {
+        if (!array_key_exists('company_id', $_GET)) {
+            $frag = companyFilterSql($column, $params);
+            // companyFilterSql() yields a bare predicate, so it has to be joined
+            // with AND — and must not consume a param when it returns nothing.
+            if ($frag !== '') { $where .= " AND" . $frag; }
+            return null;
+        }
+        $cid = (int) $_GET['company_id'];
+        if ($cid > 0 && array_key_exists($cid, companyOptions())) {
+            $where .= " AND $column = ?";
+            $params[] = $cid;
+            return $cid;
+        }
+        return 0;
     }
 }
 

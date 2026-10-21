@@ -74,10 +74,17 @@ if ($isEdit) {
 */
 $currentContract = $contractorId ? contractorCurrentContract($db, $contractorId) : null;
 $engagementLocked = $currentContract !== null && !contractorContractEditable($currentContract);
-$engOptions = contractorEngagementOptions($db);
-$engSections = contractorEngagementSections($engOptions, false);
+
+// The engagement's own company governs which managers and projects are offered.
+// On a re-render after a failed submit the posted value wins over the stored one.
+$engCompanyId = (int) old('company_id', (string) ($currentContract['company_id'] ?? ''));
+if ($engCompanyId <= 0) { $engCompanyId = (int) activeCompanyId(); }
+
+$engOptions = contractorEngagementOptions($db, $engCompanyId ?: null);
+$engSections = contractorEngagementSections($engOptions, false, $engCompanyId ?: null);
 $engagementRecord = $currentContract ?: ['title' => '', 'contract_type' => '', 'scope_of_work' => '',
     'supply_source' => 'direct', 'agency_vendor_id' => '', 'department_id' => '', 'designation_id' => '',
+    'company_id' => $engCompanyId,
     'contractual_job_title' => '', 'project_id' => '', 'manager_employee_id' => '', 'purchase_order_id' => '',
     'po_reference' => '', 'start_date' => date('Y-m-d'), 'end_date' => '', 'work_arrangement' => '',
     'fte_allocation' => '', 'rate_basis' => '', 'rate_amount' => '',
@@ -174,9 +181,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         to($isEdit ? 'modules/contractors/form.php?id=' . $contractorId : 'modules/contractors/form.php');
     }
 
+    /*
+     * The contractor belongs to the company engaging them. When the engagement
+     * block was filled, contractorContractErrors() has already cleared this
+     * company; a contractor saved without one still has to record something.
+     */
+    if (trim((string) ($_POST['company_id'] ?? '')) !== '') {
+        try {
+            $data['company_id'] = resolveCompanyForSave($_POST['company_id']);
+        } catch (RuntimeException $e) {
+            flash('error', $e->getMessage(), 'error');
+            to($isEdit ? 'modules/contractors/form.php?id=' . $contractorId : 'modules/contractors/form.php');
+        }
+    } else {
+        $data['company_id'] = activeCompanyId() ?: null;
+    }
+
     $columns = [
         'first_name', 'last_name', 'gender', 'date_of_birth', 'nationality', 'email', 'phone', 'address',
-        'work_location', 'contractor_category', 'specialisation',
+        'work_location', 'contractor_category', 'specialisation', 'company_id',
         'emirates_id_number', 'emirates_id_expiry', 'passport_number', 'passport_expiry',
         'visa_type', 'visa_number', 'visa_expiry', 'work_permit_number', 'work_permit_expiry',
         'labor_card_number', 'labor_card_expiry', 'trn_number',
@@ -435,4 +458,5 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 <?php require __DIR__ . '/../../templates/document_viewer.php'; ?>
+<?php contractorEngagementCascadeScript(); ?>
 <?php require_once '../../includes/footer.php'; ?>

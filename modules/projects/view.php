@@ -63,7 +63,11 @@ $taskStatusColors = ['todo' => 'bg-gray-100', 'in_progress' => 'bg-blue-100', 'r
             
             <p class="text-gray-600 mb-4"><?= sanitize($project['description'] ?? 'No description') ?></p>
             
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                <div>
+                    <span class="text-gray-500">Company</span>
+                    <p class="font-medium"><?= sanitize(companyLabel($project['company_id']) ?? '-') ?></p>
+                </div>
                 <div>
                     <span class="text-gray-500">Client</span>
                     <p class="font-medium"><?= sanitize($project['client_name'] ?? '-') ?></p>

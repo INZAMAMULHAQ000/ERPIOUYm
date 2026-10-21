@@ -23,11 +23,22 @@ function contractorInputClass($name, array $errors, $extra = '')
 /**
  * Echo one card. $record supplies stored values, $errors field messages, and
  * $locked disables every control (used for approved or spent contracts).
+ *
+ * Extra descriptor keys: 'dis' starts a single control disabled (cascading
+ * fields before their parent is chosen), and 'attrs' emits arbitrary
+ * attributes — the data-* hooks the cascading script selects on.
  */
 function contractorRenderSection(array $sec, array $record, array $errors, $locked = false)
 {
     $spanCls = [1 => 'lg:col-span-1', 2 => 'lg:col-span-2', 3 => 'lg:col-span-3', 4 => 'lg:col-span-4'];
     $esc = fn($v) => htmlspecialchars((string) $v);
+    $attrs = function (array $f) use ($esc) {
+        $html = '';
+        foreach (($f['attrs'] ?? []) as $k => $v) {
+            $html .= ' ' . $esc($k) . '="' . $esc($v) . '"';
+        }
+        return $html;
+    };
     $readonlyNote = '<span class="text-[10px] text-slate-400 uppercase tracking-wide ml-2">read-only</span>';
     ?>
     <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-5">
@@ -41,7 +52,8 @@ function contractorRenderSection(array $sec, array $record, array $errors, $lock
                 $val  = contractorFieldValue($name, $record);
                 $span = $spanCls[$f['span'] ?? 1];
                 $req  = !empty($f['req']) ? ' <span class="text-red-500">*</span>' : '';
-                $dis  = $locked ? 'disabled' : '';
+                $dis  = ($locked || !empty($f['dis'])) ? 'disabled' : '';
+                $attrHtml = $attrs($f);
                 $errHtml = isset($errors[$name])
                     ? '<p class="text-xs text-red-600 mt-1">' . $esc($errors[$name]) . '</p>' : '';
                 $hintHtml = !empty($f['hint'])
@@ -61,14 +73,25 @@ function contractorRenderSection(array $sec, array $record, array $errors, $lock
                 <div class="<?= $span ?>">
                     <label class="block text-xs font-semibold text-slate-500 mb-1" for="<?= $name ?>"><?= $esc($f['l']) ?><?= $req ?></label>
                     <textarea name="<?= $name ?>" id="<?= $name ?>" rows="<?= $f['rows'] ?? 3 ?>"
-                              <?= $dis ?> class="<?= contractorInputClass($name, $errors) ?>"><?= $esc($val) ?></textarea>
+                              <?= $dis ?><?= $attrHtml ?> class="<?= contractorInputClass($name, $errors) ?>"><?= $esc($val) ?></textarea>
+                    <?= $hintHtml . $errHtml ?>
+                </div>
+
+                <?php elseif ($f['t'] === 'company'): ?>
+                <div class="<?= $span ?>">
+                    <label class="block text-xs font-semibold text-slate-500 mb-1" for="<?= $name ?>"><?= $esc($f['l']) ?><?= $req ?></label>
+                    <?= renderCompanySelect($name, $val, array_merge([
+                        'blank' => $f['blank'] ?? '— Select Company —',
+                        'id' => $name,
+                        'class' => contractorInputClass($name, $errors),
+                    ], $f['attrs'] ?? [])) ?>
                     <?= $hintHtml . $errHtml ?>
                 </div>
 
                 <?php elseif ($f['t'] === 'select'): ?>
                 <div class="<?= $span ?>">
                     <label class="block text-xs font-semibold text-slate-500 mb-1" for="<?= $name ?>"><?= $esc($f['l']) ?><?= $req ?></label>
-                    <select name="<?= $name ?>" id="<?= $name ?>" <?= $dis ?> class="<?= contractorInputClass($name, $errors) ?>">
+                    <select name="<?= $name ?>" id="<?= $name ?>" <?= $dis ?><?= $attrHtml ?> class="<?= contractorInputClass($name, $errors) ?>">
                         <option value=""><?= $f['blank'] ?? '— Select —' ?></option>
                         <?php foreach ($f['opts'] as $k => $l): ?>
                         <option value="<?= $esc($k) ?>" <?= (string) $val === (string) $k ? 'selected' : '' ?>><?= $esc($l) ?></option>
@@ -92,7 +115,7 @@ function contractorRenderSection(array $sec, array $record, array $errors, $lock
                            <?= isset($f['step']) ? 'step="' . $esc($f['step']) . '"' : '' ?>
                            <?= isset($f['min']) ? 'min="' . $esc($f['min']) . '"' : '' ?>
                            <?= isset($f['max']) ? 'max="' . $esc($f['max']) . '"' : '' ?>
-                           <?= $dis ?> class="<?= contractorInputClass($name, $errors, isset($f['jscls']) ? ' ' . $f['jscls'] : '') ?>">
+                           <?= $dis ?><?= $attrHtml ?> class="<?= contractorInputClass($name, $errors, isset($f['jscls']) ? ' ' . $f['jscls'] : '') ?>">
                     <?= $hintHtml . $errHtml ?>
                 </div>
                 <?php endif; ?>

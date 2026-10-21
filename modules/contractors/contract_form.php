@@ -46,7 +46,12 @@ if ($isEdit) {
 /* ------------------------------------------------------------------ */
 /* Reference data                                                      */
 /* ------------------------------------------------------------------ */
-$opts = contractorEngagementOptions($db);
+// The contract's own company governs which managers and projects are offered.
+// $existing is the stored row; $record is not built until later in this file.
+$contractCompanyId = (int) old('company_id', (string) ($existing['company_id'] ?? ''));
+if ($contractCompanyId <= 0) { $contractCompanyId = (int) activeCompanyId(); }
+
+$opts = contractorEngagementOptions($db, $contractCompanyId ?: null);
 $typeLabels = $opts['type_labels'];
 $arrangements = $opts['arrangements'];
 $billing = $opts['billing'];
@@ -73,6 +78,7 @@ $record = [
     'title' => '', 'contract_number' => $nextNumber, 'contract_type' => '', 'scope_of_work' => '',
     'supply_source' => 'direct', 'agency_vendor_id' => '', 'department_id' => '', 'designation_id' => '',
     'contractual_job_title' => '', 'manager_employee_id' => '', 'project_id' => '', 'purchase_order_id' => '',
+    'company_id' => $contractCompanyId,
     'po_reference' => '', 'start_date' => date('Y-m-d'), 'end_date' => '', 'work_arrangement' => '',
     'fte_allocation' => '', 'rate_basis' => '', 'rate_amount' => '',
     'currency_code' => function_exists('getActiveCurrency') ? getActiveCurrency() : 'AED',
@@ -132,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 /* ------------------------------------------------------------------ */
 /* Form definition                                                     */
 /* ------------------------------------------------------------------ */
-$sections = contractorEngagementSections($opts, true);
+$sections = contractorEngagementSections($opts, true, $contractCompanyId ?: null);
 ?>
 
 <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -192,4 +198,5 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 
+<?php contractorEngagementCascadeScript(); ?>
 <?php require_once '../../includes/footer.php'; ?>

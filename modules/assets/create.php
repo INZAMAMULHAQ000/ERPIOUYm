@@ -147,6 +147,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /*
     |--------------------------------------------------------------------------
+    | Location Length Validation
+    |--------------------------------------------------------------------------
+    */
+    $location = trim($_POST['location'] ?? '');
+
+    if ($location !== '' && strlen($location) > 255) {
+
+        $errors['location'] =
+            'Location cannot exceed 255 characters.';
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Owning Company
+    |--------------------------------------------------------------------------
+    */
+    try {
+        $assetCompanyId = resolveCompanyForSave($_POST['company_id'] ?? '');
+    } catch (RuntimeException $e) {
+        $assetCompanyId = null;
+        $errors['company_id'] = $e->getMessage();
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
     | Stop if validation errors
     |--------------------------------------------------------------------------
     */
@@ -164,6 +191,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     |--------------------------------------------------------------------------
     */
     $assetCode = generateAssetCode($db);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Resolve Status
+    |--------------------------------------------------------------------------
+    |
+    | 'assigned' is deliberately absent: ownership of an assignment lives in
+    | modules/asset_assignments, so a status chosen here must not fake one.
+    |
+    |--------------------------------------------------------------------------
+    */
+    $assignableStatuses = ['available', 'maintenance', 'damaged', 'lost', 'retired'];
+    $postedStatus = $_POST['status'] ?? '';
+    $assetStatus = in_array($postedStatus, $assignableStatuses, true) ? $postedStatus : 'available';
 
 
     /*
@@ -185,9 +226,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             warranty_expiry,
             asset_condition,
             status,
+            location,
+            company_id,
             notes
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
 
@@ -203,6 +246,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_POST['vendor_id'] ?: null,
         $_POST['warranty_expiry'] ?: null,
         $_POST['asset_condition'] ?: 'new',
+        $assetStatus,
+        $location ?: null,
+        $assetCompanyId,
         $_POST['notes'] ?: null
     ]);
 
@@ -230,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     );
 
     to(
-        'http://localhost/ERP/modules/assets/index.php'
+        'modules/assets/index.php'
     );
 }
 ?>
@@ -544,6 +590,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
         <!-- =================================================
+             Location / Organisation
+        ================================================== -->
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            <!-- Location -->
+
+            <div>
+
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+
+                    Location
+
+                </label>
+
+                <input
+                    type="text"
+                    name="location"
+                    value="<?= old('location') ?>"
+                    maxlength="255"
+                    placeholder="Building, floor, room or safe"
+                    class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+
+                <p class="text-xs text-gray-500 mt-1">Where the asset is physically kept.</p>
+
+            </div>
+
+            <!-- Organisation -->
+
+            <div>
+
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+
+                    Organisation
+
+                </label>
+
+                <?= renderCompanySelect('company_id', old('company_id'), ['blank' => 'Select Company']) ?>
+
+                <p class="text-xs text-gray-500 mt-1">Which company the asset belongs to.</p>
+
+            </div>
+
+        </div>
+
+
+        <!-- =================================================
              Purchase Details
         ================================================== -->
 
@@ -675,27 +768,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     name="status"
                     class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
 
-                    <option value="available">
+                    <option value="available" <?= old('status') == 'available' || !old('status') ? 'selected' : '' ?>>
                         Available
                     </option>
 
-                    <option value="assigned">
-                        Assigned
-                    </option>
-
-                    <option value="maintenance">
+                    <option value="maintenance" <?= old('status') == 'maintenance' ? 'selected' : '' ?>>
                         Maintenance
                     </option>
 
-                    <option value="damaged">
+                    <option value="damaged" <?= old('status') == 'damaged' ? 'selected' : '' ?>>
                         Damaged
                     </option>
 
-                    <option value="retired">
+                    <option value="lost" <?= old('status') == 'lost' ? 'selected' : '' ?>>
+                        Lost
+                    </option>
+
+                    <option value="retired" <?= old('status') == 'retired' ? 'selected' : '' ?>>
                         Retired
                     </option>
 
                 </select>
+
+                <p class="text-xs text-gray-500 mt-1">Assign to a person from the asset list after saving.</p>
 
             </div>
 

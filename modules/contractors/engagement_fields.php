@@ -8,18 +8,40 @@
  * fields twice would let the two copies drift, so both pages call these.
  */
 
-/** Option lists for the engagement fields, loaded once per request. */
-function contractorEngagementOptions($db)
+/**
+ * Option lists for the engagement fields, loaded once per request.
+ *
+ * $companyId narrows the people and projects that can legitimately be chosen.
+ * Passing null keeps every row visible, which is what an engagement with no
+ * company selected yet must render — the two dependent lists are disabled in
+ * the browser until a company is picked.
+ */
+function contractorEngagementOptions($db, $companyId = null)
 {
     $vendorOpts = [];
     foreach ($db->query("SELECT id, vendor_code, vendor_name FROM vendors WHERE status='active' ORDER BY vendor_name") as $v) {
         $vendorOpts[$v['id']] = ($v['vendor_code'] ? $v['vendor_code'] . ' — ' : '') . $v['vendor_name'];
     }
 
+    $empSql = "SELECT id, first_name, last_name FROM employees WHERE status='active'";
+    $projSql = "SELECT id, project_name FROM projects";
+    $poSql = "SELECT id, po_number FROM purchase_orders";
+    $empParams = $projParams = [];
+    if ($companyId) {
+        $empSql .= " AND company_id = ?";
+        $empParams[] = $companyId;
+        $projSql .= " WHERE company_id = ?";
+        $projParams[] = $companyId;
+    }
+    $empStmt = $db->prepare($empSql . " ORDER BY first_name");
+    $empStmt->execute($empParams);
     $empOpts = [];
-    foreach ($db->query("SELECT id, first_name, last_name FROM employees WHERE status='active' ORDER BY first_name") as $e) {
+    foreach ($empStmt as $e) {
         $empOpts[$e['id']] = trim($e['first_name'] . ' ' . $e['last_name']);
     }
+
+    $projStmt = $db->prepare($projSql . " ORDER BY project_name LIMIT 400");
+    $projStmt->execute($projParams);
 
     return [
         'type_labels'   => lookupOptions('contractor.contract_type', [
@@ -36,7 +58,7 @@ function contractorEngagementOptions($db)
         'departments'   => array_column($db->query("SELECT id, department_name FROM departments WHERE status='active' ORDER BY department_name")->fetchAll(), 'department_name', 'id'),
         'designations'  => array_column($db->query("SELECT id, designation_name FROM designations WHERE status='active' ORDER BY designation_name")->fetchAll(), 'designation_name', 'id'),
         'employees'     => $empOpts,
-        'projects'      => array_column($db->query("SELECT id, project_name FROM projects ORDER BY project_name LIMIT 400")->fetchAll(), 'project_name', 'id'),
+        'projects'      => array_column($projStmt->fetchAll(), 'project_name', 'id'),
         'purchase_orders' => array_column($db->query("SELECT id, po_number FROM purchase_orders ORDER BY id DESC LIMIT 300")->fetchAll(), 'po_number', 'id'),
         'currencies'    => array_column($db->query("SELECT code, name FROM currencies WHERE is_active = 1 ORDER BY sort_order")->fetchAll(), 'name', 'code'),
     ];
@@ -46,10 +68,14 @@ function contractorEngagementOptions($db)
  * Section descriptors for contractorRenderSection(). $withNumber shows the
  * contract number card, which only makes sense on the dedicated contract form;
  * on the master form the number is shown as a read-only caption instead.
+ *
+ * $companyId drives the initial disabled state of the two company-dependent
+ * lists, so the form is correct before any script runs.
  */
-function contractorEngagementSections(array $opts, $withNumber = true)
+function contractorEngagementSections(array $opts, $withNumber = true, $companyId = null)
 {
     $sections = [];
+    $dependent = !$companyId;
 
     if ($withNumber) {
         $sections[] = ['title' => 'Contract', 'icon' => 'fa-hashtag', 'lockable' => true, 'fields' => [
@@ -79,8 +105,15 @@ function contractorEngagementSections(array $opts, $withNumber = true)
         ['n' => 'department_id', 'l' => 'Department', 't' => 'select', 'opts' => $opts['departments'], 'span' => 1, 'blank' => '— Not set —'],
         ['n' => 'designation_id', 'l' => 'Designation', 't' => 'select', 'opts' => $opts['designations'], 'span' => 1, 'blank' => '— Not set —'],
         ['n' => 'contractual_job_title', 'l' => 'Contractual Job Title', 't' => 'text', 'span' => 2, 'hint' => 'As written on the contract, independent of the designation list'],
-        ['n' => 'manager_employee_id', 'l' => 'Reporting Manager', 't' => 'select', 'opts' => $opts['employees'], 'span' => 1, 'blank' => '— Not set —'],
-        ['n' => 'project_id', 'l' => 'Project', 't' => 'select', 'opts' => $opts['projects'], 'span' => 1, 'blank' => '— None —'],
+        ['n' => 'company_id', 'l' => 'Company', 't' => 'company', 'span' => 1,
+         'attrs' => ['data-cascade-master' => 'engagement-scope'],
+         'hint' => 'Sets which Reporting Manager and Project you may choose'],
+        ['n' => 'manager_employee_id', 'l' => 'Reporting Manager', 't' => 'select', 'opts' => $opts['employees'], 'span' => 1, 'blank' => '— Not set —',
+         'dis' => $dependent,
+         'attrs' => ['data-cascade-child' => 'engagement-scope', 'data-cascade-source' => 'employees']],
+        ['n' => 'project_id', 'l' => 'Project', 't' => 'select', 'opts' => $opts['projects'], 'span' => 1, 'blank' => '— None —',
+         'dis' => $dependent,
+         'attrs' => ['data-cascade-child' => 'engagement-scope', 'data-cascade-source' => 'projects']],
         ['n' => 'work_arrangement', 'l' => 'Work Arrangement', 't' => 'select', 'opts' => $opts['arrangements'], 'span' => 1, 'blank' => '— Not set —'],
         ['n' => 'fte_allocation', 'l' => 'Allocation %', 't' => 'number', 'span' => 1, 'step' => '0.01', 'min' => '0', 'max' => '100'],
         ['n' => 'timesheet_required', 'l' => 'Timesheets required', 't' => 'checkbox', 'span' => 1, 'hint' => 'Engagement is billed against recorded hours'],
@@ -104,6 +137,120 @@ function contractorEngagementSections(array $opts, $withNumber = true)
     ]];
 
     return $sections;
+}
+
+/**
+ * Script behind the Company -> Reporting Manager / Project cascade.
+ *
+ * Emitted as a function rather than inline because the same engagement block is
+ * rendered by two pages (the contractor master form and the standalone contract
+ * form), and a second copy would drift from the first.
+ */
+function contractorEngagementCascadeScript()
+{
+    $endpoint = htmlspecialchars(url('modules/contractors/ajax_engagement_options.php'), ENT_QUOTES);
+    ?>
+<script>
+(function () {
+    var ENDPOINT = <?= json_encode($endpoint) ?>;
+
+    function blankText(select) {
+        return select.getAttribute('data-cascade-blank') || '— Not set —';
+    }
+
+    /** Rebuild the option list, keeping `keep` only if the new list offers it. */
+    function populate(select, rows, keep) {
+        select.innerHTML = '';
+        var blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = blankText(select);
+        select.appendChild(blank);
+
+        rows.forEach(function (row) {
+            var opt = document.createElement('option');
+            opt.value = row.id;
+            opt.textContent = row.label;
+            select.appendChild(opt);
+        });
+
+        // A stored manager or project that has moved to another company is
+        // dropped rather than silently re-posted under the new one.
+        select.value = keep || '';
+        if (select.value !== (keep || '')) { select.value = ''; }
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function wire(master) {
+        var group = master.getAttribute('data-cascade-master');
+        var children = Array.prototype.slice.call(
+            document.querySelectorAll('[data-cascade-child="' + group + '"]')
+        );
+        if (!children.length) { return; }
+
+        children.forEach(function (c) {
+            var first = c.querySelector('option');
+            c.setAttribute('data-cascade-blank', first ? first.textContent : '— Not set —');
+            c._token = 0;
+        });
+
+        function load(child, companyId, keep) {
+            child.disabled = true;
+            var mine = ++child._token;
+            var source = child.getAttribute('data-cascade-source');
+
+            if (!companyId) {
+                populate(child, [], '');
+                return;
+            }
+
+            fetch(ENDPOINT + '?action=' + encodeURIComponent(source) + '&company_id=' + encodeURIComponent(companyId), {
+                credentials: 'same-origin'
+            }).then(function (r) {
+                if (!r.ok) { throw new Error('HTTP ' + r.status); }
+                return r.json();
+            }).then(function (json) {
+                // Each child tracks its own request, so a slow answer for an
+                // earlier company cannot overwrite the list now on screen —
+                // and cannot make its sibling look stale.
+                if (mine !== child._token) { return; }
+                if (!json || json.success !== true) { throw new Error((json && json.error) || 'Failed'); }
+                populate(child, json.data || [], keep);
+                child.disabled = false;
+            }).catch(function () {
+                if (mine !== child._token) { return; }
+                populate(child, [], '');
+                child.disabled = true;
+            });
+        }
+
+        // First run keeps the stored selection; a later company change is a
+        // deliberate user action, so the old choices are cleared.
+        var first = true;
+        function sync() {
+            var keep = first;
+            first = false;
+            var companyId = master.value;
+            children.forEach(function (c) {
+                load(c, companyId, keep ? c.value : '');
+            });
+        }
+
+        master.addEventListener('change', sync);
+        sync();
+    }
+
+    function start() {
+        Array.prototype.forEach.call(document.querySelectorAll('[data-cascade-master]'), wire);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+    } else {
+        start();
+    }
+})();
+</script>
+    <?php
 }
 
 /**

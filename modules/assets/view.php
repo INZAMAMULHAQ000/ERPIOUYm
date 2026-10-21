@@ -61,6 +61,8 @@ $conditionColors = ['new' => 'bg-blue-100 text-blue-800', 'good' => 'bg-green-10
             <div class="flex justify-between"><span class="text-gray-600">Brand/Model:</span><span><?= sanitize(($asset['brand'] ?? '-') . ' / ' . ($asset['model'] ?? '-')) ?></span></div>
             <div class="flex justify-between"><span class="text-gray-600">Status:</span><span class="px-2 py-1 text-xs rounded <?= $statusColors[$asset['status']] ?? 'bg-gray-100' ?>"><?= ucfirst($asset['status']) ?></span></div>
             <div class="flex justify-between"><span class="text-gray-600">Condition:</span><span class="px-2 py-1 text-xs rounded <?= $conditionColors[$asset['asset_condition']] ?? 'bg-gray-100' ?>"><?= ucfirst($asset['asset_condition']) ?></span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Location:</span><span><?= sanitize($asset['location'] ?? '') ?: '-' ?></span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Organisation:</span><span><?= sanitize(companyLabel($asset['company_id']) ?? '-') ?></span></div>
         </div>
     </div>
     

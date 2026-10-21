@@ -31,6 +31,13 @@ function attachmentEntities()
             'table' => 'contractor_documents',
             'fk'    => 'contractor_id',
         ],
+        // A company has no documents table — the logo is a column on companies —
+        // so only the storage root applies.
+        'company' => [
+            'root'  => 'uploads/companies',
+            'table' => null,
+            'fk'    => null,
+        ],
     ];
 }
 

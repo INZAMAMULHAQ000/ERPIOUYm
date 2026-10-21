@@ -11,6 +11,12 @@
 
 $visaTypes = employeeVisaTypes();
 $docSlots  = employeeDocSlots();
+
+// The rendered state is decided on the server so the block is correct before
+// any script runs; the script only keeps it in step while the form is open.
+$currentNationality = old('nationality', $emp['nationality'] ?? '');
+$isIndian = employeeIsIndianNationality($currentNationality);
+$showIndian = $isIndian ? '' : ' hidden';
 ?>
 
 <div>
@@ -18,8 +24,15 @@ $docSlots  = employeeDocSlots();
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Nationality</label>
-            <input type="text" id="nationality" name="nationality" value="<?= old('nationality', $emp['nationality'] ?? '') ?>"
-                class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+            <select id="nationality" name="nationality" class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+                <option value="">Select</option>
+                <?php foreach (employeeNationalities() as $key => $label): ?>
+                <option value="<?= sanitize($key) ?>" <?= $currentNationality === $key ? 'selected' : '' ?>><?= sanitize($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php if (!empty($errors['nationality'])): ?>
+            <p class="text-red-600 text-sm mt-1"><?= sanitize($errors['nationality']) ?></p>
+            <?php endif; ?>
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Passport Number</label>
@@ -62,6 +75,34 @@ $docSlots  = employeeDocSlots();
         </div>
     </div>
 
+    <div id="indian-evidence" class="<?= $showIndian ?>">
+        <h4 class="text-sm font-semibold text-gray-700 mt-5 mb-3">Indian National Identity Evidence</h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="aadhaar_number">Aadhaar Number</label>
+                <input type="text" id="aadhaar_number" name="aadhaar_number"
+                       value="<?= old('aadhaar_number', $emp['aadhaar_number'] ?? '') ?>"
+                       inputmode="numeric" maxlength="12" placeholder="1234 1234 1234"
+                       class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+                <?php if (!empty($errors['aadhaar_number'])): ?>
+                <p class="text-red-600 text-sm mt-1"><?= sanitize($errors['aadhaar_number']) ?></p>
+                <?php endif; ?>
+                <p class="text-xs text-gray-500 mt-1">11 digits, spaces ignored</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1" for="pan_number">PAN</label>
+                <input type="text" id="pan_number" name="pan_number"
+                       value="<?= old('pan_number', $emp['pan_number'] ?? '') ?>"
+                       maxlength="10" placeholder="ABCDE1234F" style="text-transform: uppercase"
+                       class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500">
+                <?php if (!empty($errors['pan_number'])): ?>
+                <p class="text-red-600 text-sm mt-1"><?= sanitize($errors['pan_number']) ?></p>
+                <?php endif; ?>
+                <p class="text-xs text-gray-500 mt-1">5 letters, 4 digits, 1 letter</p>
+            </div>
+        </div>
+    </div>
+
     <h4 class="text-sm font-semibold text-gray-700 mt-5 mb-3">Employment Contract</h4>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
@@ -100,8 +141,11 @@ $docSlots  = employeeDocSlots();
             $doc = $slotDocs[$slot] ?? null;
             $expiryColumn = employeeSlotExpiryColumn($slot);
             $expiry = $expiryColumn ? ($emp[$expiryColumn] ?? '') : '';
+            // Rendered but hidden rather than omitted, so switching nationality
+            // in the browser needs no DOM construction.
+            $indianOnly = in_array($slot, employeeNationalitySlots(), true);
         ?>
-        <div class="border rounded-lg p-4">
+        <div class="border rounded-lg p-4<?= ($indianOnly && !$isIndian) ? ' hidden' : '' ?>"<?= $indianOnly ? ' data-indian-only' : '' ?>>
             <div class="flex items-start justify-between gap-2 mb-1">
                 <label class="block text-sm font-medium text-gray-700" for="<?= $slot ?>"><?= $label ?></label>
                 <?php if ($expiry): ?>
@@ -167,3 +211,22 @@ $docSlots  = employeeDocSlots();
         </div>
     </div>
 </div>
+
+<script>
+(function () {
+    var nationality = document.getElementById('nationality');
+    if (!nationality) { return; }
+
+    // Server-rendered state is already correct; this only tracks live changes.
+    function syncIndianEvidence() {
+        var isIndia = (nationality.value || '').trim().toLowerCase() === 'india';
+        var block = document.getElementById('indian-evidence');
+        if (block) { block.classList.toggle('hidden', !isIndia); }
+        Array.prototype.forEach.call(document.querySelectorAll('[data-indian-only]'), function (card) {
+            card.classList.toggle('hidden', !isIndia);
+        });
+    }
+
+    nationality.addEventListener('change', syncIndianEvidence);
+})();
+</script>

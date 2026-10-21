@@ -183,7 +183,7 @@ $profileGroups = [
         ['Quote Validity', $c['quote_validity_days'] . ' days'],
     ]],
     ['Branding & Operations', 'fa-palette', [
-        ['Logo', $c['logo_path']], ['Brand Colour', $c['theme_color']],
+        ['Logo', $c['logo_path'] ? (preg_match('#^https?://#i', $c['logo_path']) ? $c['logo_path'] : 'Uploaded to this server') : null], ['Brand Colour', $c['theme_color']],
         ['Letterhead', $c['letterhead_template_id'] ? (function () use ($db, $c) { $q = $db->prepare("SELECT template_name FROM templates WHERE id=?"); $q->execute([$c['letterhead_template_id']]); return $q->fetchColumn() ?: null; })() : null],
         ['Signatory Text', $c['signature_text']], ['Footer Note', $c['document_footer_note']],
         ['Default Warehouse', $c['default_warehouse_id'] ? (function () use ($db, $c) { $q = $db->prepare("SELECT warehouse_name FROM warehouses WHERE id=?"); $q->execute([$c['default_warehouse_id']]); return $q->fetchColumn() ?: null; })() : null],
@@ -198,8 +198,8 @@ $profileGroups = [
 <!-- ===== Header ===== -->
 <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
     <div class="flex items-start gap-4">
-        <?php if ($c['logo_path']): ?>
-            <img src="<?= htmlspecialchars($c['logo_path']) ?>" alt="" class="w-14 h-14 rounded-xl object-contain bg-white border border-slate-200 p-1">
+        <?php if ($logoUrl = companyLogoUrl($c['logo_path'])): ?>
+            <img src="<?= htmlspecialchars($logoUrl) ?>" alt="" class="w-14 h-14 rounded-xl object-contain bg-white border border-slate-200 p-1">
         <?php else: ?>
             <div class="w-14 h-14 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0 shadow-sm">
                 <i class="fas fa-building text-white text-lg"></i>

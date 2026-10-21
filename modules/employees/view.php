@@ -120,6 +120,16 @@ $visaLabels = employeeVisaTypes();
                     <label class="block text-sm font-medium text-gray-500">Nationality</label>
                     <p class="text-gray-900"><?= sanitize($emp['nationality'] ?? '') ?: '-' ?></p>
                 </div>
+                <?php if (employeeIsIndianNationality($emp['nationality'] ?? '')): ?>
+                <div>
+                    <label class="block text-sm font-medium text-gray-500">Aadhaar Number</label>
+                    <p class="text-gray-900 font-medium"><?= sanitize($emp['aadhaar_number'] ?? '') ?: '-' ?></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-500">PAN</label>
+                    <p class="text-gray-900 font-medium"><?= sanitize($emp['pan_number'] ?? '') ?: '-' ?></p>
+                </div>
+                <?php endif; ?>
                 <div>
                     <label class="block text-sm font-medium text-gray-500">Passport Number</label>
                     <p class="text-gray-900 font-medium"><?= sanitize($emp['passport_number'] ?? '') ?: '-' ?></p>
@@ -189,6 +199,10 @@ $visaLabels = employeeVisaTypes();
                 <div>
                     <label class="block text-sm font-medium text-gray-500">Work Location</label>
                     <p class="text-gray-900"><?= sanitize($emp['work_location'] ?? '-') ?></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-500">Company</label>
+                    <p class="text-gray-900"><?= sanitize(companyLabel($emp['company_id'] ?? 0) ?? '-') ?></p>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-500">Status</label>

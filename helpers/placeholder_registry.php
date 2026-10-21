@@ -15,6 +15,38 @@ function getPlaceholdersForType(string $type): array {
 }
 
 /**
+ * Resolve an <img> src coming out of a letterhead template.
+ *
+ * Three shapes reach this function and each needs different handling: an
+ * absolute URL (use as-is), a path relative to the app root (must be prefixed,
+ * or it resolves against the template's own directory and 404s), and the logo
+ * placeholder. The placeholder was spelled `{{logo_url}}` by the designer and
+ * declared `company_logo` by this registry, and neither was ever resolved — so
+ * a template's logo slot only ever fell back to the company name.
+ *
+ * Returns '' when no image can be produced, which callers treat as "show the
+ * company name instead".
+ */
+function templateImageSrc($src, array $data = []) {
+    $src = trim((string) $src);
+    $isPlaceholder = $src === '' || preg_match('/^\{\{(logo_url|company_logo)\}\}$/', $src) === 1;
+
+    if ($isPlaceholder) {
+        $logo = $data['company_logo'] ?? ($data['logo_url'] ?? null);
+        if (!$logo && function_exists('activeCompanyLogoUrl')) {
+            $logo = activeCompanyLogoUrl();
+        }
+        return trim((string) $logo);
+    }
+
+    if (preg_match('~^(https?://|data:|/)#i', $src)) {
+        return $src;
+    }
+
+    return function_exists('url') ? url($src) : $src;
+}
+
+/**
  * System-level placeholders available in ALL templates
  */
 function getDefaultPlaceholders(): array {

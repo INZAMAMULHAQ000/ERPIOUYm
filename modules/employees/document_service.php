@@ -14,12 +14,15 @@
  */
 
 require_once __DIR__ . '/../../helpers/attachment_storage.php';
+require_once __DIR__ . '/../../helpers/lookup.php';
 
 /** Text inputs of the identification + contract block, in display order. */
 function employeeIdFields()
 {
     return [
         'nationality',
+        'aadhaar_number',
+        'pan_number',
         'passport_number',
         'passport_expiry',
         'visa_type',
@@ -31,6 +34,35 @@ function employeeIdFields()
         'contract_start_date',
         'contract_end_date',
     ];
+}
+
+/**
+ * Nationality list. Falls back to a short built-in set so the form still
+ * renders in an environment where the lookup has not been seeded.
+ */
+function employeeNationalities()
+{
+    return lookupOptions('person.nationality', [
+        'India' => 'India', 'Pakistan' => 'Pakistan', 'Bangladesh' => 'Bangladesh',
+        'Nepal' => 'Nepal', 'Sri Lanka' => 'Sri Lanka', 'United Arab Emirates' => 'United Arab Emirates',
+        'Philippines' => 'Philippines', 'United Kingdom' => 'United Kingdom', 'United States of America' => 'United States of America',
+    ]);
+}
+
+/**
+ * Aadhaar and PAN are Indian evidence only, so the whole block keys off one
+ * nationality. Compared case- and space-insensitively because the column was
+ * free text before the lookup existed.
+ */
+function employeeIsIndianNationality($nationality)
+{
+    return preg_replace('/\s+/', '', mb_strtolower(trim((string) $nationality))) === 'india';
+}
+
+/** Document slots that only apply to a given nationality. */
+function employeeNationalitySlots()
+{
+    return ['aadhaar_copy', 'pan_copy'];
 }
 
 function employeeVisaTypes()
@@ -64,6 +96,29 @@ function employeeIdInput($post)
     $data['emirates_id_number'] = preg_replace('/[^0-9]/', '', $data['emirates_id_number']);
     $data['contract_number']    = strtoupper(preg_replace('/[^A-Za-z0-9\-\/]/', '', $data['contract_number']));
 
+    // Aadhaar is digits only (spaces and dashes are display conventions); PAN is
+    // alphanumeric and always shown upper-case.
+    $data['aadhaar_number'] = preg_replace('/[^0-9]/', '', $data['aadhaar_number']);
+    $data['pan_number']     = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['pan_number']));
+
+    // Snap the posted nationality onto the controlled list without changing the
+    // spelling a user typed, so "india" and "India" are the same row value.
+    if ($data['nationality'] !== '') {
+        foreach (employeeNationalities() as $canonical) {
+            if (mb_strtolower($canonical) === mb_strtolower($data['nationality'])) {
+                $data['nationality'] = $canonical;
+                break;
+            }
+        }
+    }
+
+    // Evidence for a nationality the employee does not have must not linger in
+    // the row after they are moved off it.
+    if (!employeeIsIndianNationality($data['nationality'])) {
+        $data['aadhaar_number'] = '';
+        $data['pan_number'] = '';
+    }
+
     foreach (['passport_expiry', 'visa_expiry', 'emirates_id_expiry', 'contract_start_date', 'contract_end_date'] as $field) {
         $data[$field] = employeeNormaliseDate($data[$field]);
     }
@@ -89,9 +144,23 @@ function employeeIdErrors($data, $rawInput)
 {
     $errors = [];
 
-    if ($data['nationality'] !== '' && !preg_match('/^[A-Za-z ]+$/', $data['nationality'])) {
-        $errors['nationality'] = 'Nationality may contain letters and spaces only';
+    $nationalities = employeeNationalities();
+    if ($data['nationality'] !== '' && !array_key_exists($data['nationality'], $nationalities)) {
+        // The old free-text rule rejected legitimate list entries such as
+        // "Timor-Leste" and "Congo (Democratic Republic)", so membership of the
+        // controlled list is what is actually checked now.
+        $errors['nationality'] = 'Please choose a nationality from the list';
     }
+
+    if (employeeIsIndianNationality($data['nationality'])) {
+        if ($data['aadhaar_number'] !== '' && strlen($data['aadhaar_number']) !== 11) {
+            $errors['aadhaar_number'] = 'Aadhaar Number must be exactly 11 digits';
+        }
+        if ($data['pan_number'] !== '' && !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]$/', $data['pan_number'])) {
+            $errors['pan_number'] = 'PAN must be 5 letters, 4 digits and 1 letter (e.g. ABCDE1234F)';
+        }
+    }
+
     foreach (['passport_number' => 'Passport Number', 'visa_number' => 'Visa Number'] as $field => $label) {
         if (strlen($data[$field]) > 50) {
             $errors[$field] = $label . ' must not exceed 50 characters';
@@ -163,6 +232,8 @@ function employeeDocSlots()
         'visa_copy'                => 'Visa Copy',
         'emirates_id_copy'         => 'Emirates ID Copy',
         'employment_contract_copy' => 'Employment Contract Copy',
+        'aadhaar_copy'             => 'Aadhaar Copy',
+        'pan_copy'                 => 'PAN Copy',
     ];
 }
 
@@ -225,11 +296,23 @@ function employeeSlotDocuments($db, $employeeId)
 }
 
 /**
+ * Whether a slot may be written for the given nationality. Nationality-scoped
+ * evidence is rejected — and any copy already on file is discarded — the moment
+ * the employee is moved off that nationality, so a stale scan cannot outlive it.
+ */
+function employeeSlotAllowedForNationality($slot, $nationality)
+{
+    if (!in_array($slot, employeeNationalitySlots(), true)) {
+        return true;
+    }
+    return employeeIsIndianNationality($nationality);
+}
+
+/**
  * Replace a document slot. Passing $remove clears it; passing a $_FILES entry
  * stores it and discards the previous file. Returns an error message or null.
  */
-function employeeSaveSlot($db, $employeeId, $slot, $file, $remove, $userId)
-{
+function employeeSaveSlot($db, $employeeId, $slot, $file, $remove, $userId){
     if (!array_key_exists($slot, employeeDocSlots())) {
         return 'Unknown document slot.';
     }

@@ -145,8 +145,8 @@ function renderComponent(array $comp, array $data, int $fontSize, string $primar
             break;
 
         case 'image':
-            $src = replacePlaceholders($comp['image'] ?? $comp['src'] ?? '', $data);
-            if ($src && $src !== '{{logo_url}}') {
+            $src = templateImageSrc(replacePlaceholders($comp['image'] ?? $comp['src'] ?? '', $data), $data);
+            if ($src) {
                 $width = $comp['width'] ?? 100;
                 $align = $comp['align'] ?? 'left';
                 $html .= '<div class="component-wrapper text-' . $align . '">';
@@ -353,8 +353,8 @@ function renderPositionedContent(array $templateData, array $data, int $fontSize
                 );
 
             case 'image':
-                $src = replacePlaceholders($comp['image'] ?? $comp['src'] ?? '', $data);
-                if ($src && $src !== '{{logo_url}}') {
+                $src = templateImageSrc(replacePlaceholders($comp['image'] ?? $comp['src'] ?? '', $data), $data);
+                if ($src) {
                     return sprintf(
                         '<div class="td-element" style="%s text-align:%s;"><img src="%s" style="max-width:100%%;max-height:100%%;object-fit:contain;"></div>',
                         $style, $comp['align'] ?? 'left', sanitizeHtml($src)

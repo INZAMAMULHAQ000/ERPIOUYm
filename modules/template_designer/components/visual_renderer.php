@@ -184,8 +184,8 @@ function renderVisualComponent(array $comp, array $data): string {
 
         case 'image':
             $src = $comp['src'] ?? $comp['image'] ?? '{{logo_url}}';
-            $src = replaceVisualPlaceholders($src, $data);
-            if ($src === '{{logo_url}}' || empty($src)) {
+            $src = templateImageSrc(replaceVisualPlaceholders($src, $data), $data);
+            if (empty($src)) {
                 $content = sprintf(
                     '<div class="td-element" style="%s display:flex; align-items:center; font-weight:bold; color:%s;"><h1>%s</h1></div>',
                     $style, '#4f46e5', sanitizeVisualHtml($data['company_name'] ?? 'Company')

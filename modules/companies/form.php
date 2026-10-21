@@ -3,8 +3,15 @@ $isEdit = isset($_GET['id']) && (int) $_GET['id'] > 0;
 $pageTitle = $isEdit ? 'Edit Company' : 'New Company';
 require_once '../../includes/header.php';
 require_once '../../helpers/redirect.php';
+require_once '../../helpers/attachment_storage.php';
 
 if (!hasPermission($isEdit ? 'company.edit' : 'company.create')) { die('Access Denied'); }
+
+/** Logos are images only, and a printed letterhead never needs a huge one. */
+function companyLogoMaxBytes()
+{
+    return 2 * 1024 * 1024;
+}
 
 $db = getDB();
 $errors = restoreFormErrors();
@@ -207,7 +214,7 @@ $sections = [
         ['n' => 'invoice_terms',      'l' => 'Standard Terms & Conditions', 't' => 'textarea', 'span' => 4],
     ]],
     ['title' => 'Branding & Documents', 'icon' => 'fa-palette', 'fields' => [
-        ['n' => 'logo_path', 'l' => 'Logo Path or URL', 't' => 'text', 'span' => 2, 'ph' => 'uploads/company_logos/logo.png or https://…', 'hint' => 'Rendered on invoices, quotes and statements'],
+        ['n' => 'logo_path', 'l' => 'Company Logo', 't' => 'logo', 'span' => 4],
         ['n' => 'theme_color', 'l' => 'Brand Colour', 't' => 'text', 'span' => 1, 'ph' => '#1e40af'],
         ['n' => 'letterhead_template_id', 'l' => 'Letterhead Template', 't' => 'select', 'opts' => $tplOpts, 'span' => 1, 'cast' => 'int', 'blank' => '— Default —'],
         ['n' => 'signature_text', 'l' => 'Authorised Signatory Text', 't' => 'textarea', 'span' => 2],
@@ -231,7 +238,13 @@ $sections = [
 
 $fields = [];
 foreach ($sections as $sec) {
-    foreach ($sec['fields'] as $f) { $fields[$f['n']] = $f['cast'] ?? 'str'; }
+    foreach ($sec['fields'] as $f) {
+        // logo_path is resolved from $_FILES / the URL radio below. Leaving it in
+        // this whitelist would make the generic loop write NULL on every save
+        // that does not post the field.
+        if ($f['n'] === 'logo_path') { continue; }
+        $fields[$f['n']] = $f['cast'] ?? 'str';
+    }
 }
 
 // ————— Save —————
@@ -269,6 +282,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $dup->execute([$in['company_name'], $isEdit ? (int) $_GET['id'] : 0]);
     if ($dup->fetch()) { $errors['company_name'] = 'A company with this name already exists'; }
 
+    /*
+     * ————— Logo —————
+     *
+     * Upload and URL are mutually exclusive by design: the radio decides which
+     * one is live, so a stale value in the other control cannot win. With no
+     * radio posted at all the stored logo is left alone, which is what keeps an
+     * unrelated edit from wiping the brand image.
+     */
+    $logoSource   = (string) ($_POST['logo_source'] ?? '');
+    $logoUrl      = trim((string) ($_POST['logo_url'] ?? ''));
+    $removeLogo   = !empty($_POST['remove_logo']);
+    $existingLogo = $isEdit ? trim((string) ($company['logo_path'] ?? '')) : '';
+    $pendingLogoUpload = null;
+    $logoValue = $existingLogo;
+
+    if ($removeLogo) {
+        $logoValue = null;
+    } elseif ($logoSource === 'url') {
+        if ($logoUrl === '') {
+            $errors['logo_path'] = 'Enter the logo address, or switch to Upload.';
+        } elseif (!preg_match('#^https?://\S+$#i', $logoUrl)) {
+            $errors['logo_path'] = 'The logo address must start with http:// or https://';
+        } elseif (strlen($logoUrl) > 255) {
+            $errors['logo_path'] = 'Logo address must not exceed 255 characters';
+        } else {
+            $logoValue = $logoUrl;
+        }
+    } elseif ($logoSource === 'upload') {
+        if (empty($_FILES['logo_file']['name'])) {
+            // The Upload radio is pre-selected whenever a stored logo is already
+            // an upload, so submitting the form without touching it must keep
+            // that logo. Treating it as a missing file would block every
+            // unrelated company edit.
+            $logoValue = $existingLogo;
+        } else {
+            // Moved once the row exists, because the folder is named after the id.
+            $pendingLogoUpload = $_FILES['logo_file'];
+        }
+    }
+
     if ($errors) {
         saveFormState($errors);
         flash('validation', 'Please correct the highlighted fields.', 'error');
@@ -299,6 +352,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach (['invoice_prefix','quote_prefix','po_prefix','pr_prefix','gr_prefix','je_prefix','receipt_prefix','vendor_bill_prefix'] as $p) {
         $data[$p] = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string) $data[$p])) ?: 'X';
     }
+
+    // Assigned here, after $data has been rebuilt — setting it earlier would be
+    // silently discarded by the `$data = []` above.
+    $data['logo_path'] = $logoValue;
 
     clearOldInput();
     $db->beginTransaction();
@@ -338,6 +395,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $keep = $savedId ?? (int) $_GET['id'];
             $db->prepare("UPDATE companies SET is_default = 0 WHERE id <> ?")->execute([$keep]);
         }
+
+        /*
+         * The uploaded logo is moved now that the row — and therefore its
+         * folder — exists. A rejected file leaves the previous logo in place and
+         * is reported separately, so a bad upload never costs the user the edit
+         * they just made to the rest of the record.
+         */
+        if ($pendingLogoUpload !== null) {
+            $logoError = null;
+            try {
+                $stored = attachmentStoreFile(
+                    'company', $savedId, 'logo', $pendingLogoUpload,
+                    companyLogoMaxBytes(), ['image/jpeg', 'image/png', 'image/gif']
+                );
+                $db->prepare("UPDATE companies SET logo_path = ? WHERE id = ?")
+                   ->execute([$stored['file_path'], $savedId]);
+                if ($existingLogo !== '' && $existingLogo !== $stored['file_path'] && !preg_match('#^https?://#i', $existingLogo)) {
+                    attachmentDeleteFile('company', $existingLogo);
+                }
+            } catch (RuntimeException $e) {
+                $logoError = $e->getMessage();
+            }
+            if ($logoError !== null) {
+                flash('logo', 'The company was saved, but the logo was not accepted: ' . $logoError, 'warning');
+            }
+        } elseif ($removeLogo && $existingLogo !== '' && !preg_match('#^https?://#i', $existingLogo)) {
+            attachmentDeleteFile('company', $existingLogo);
+        }
+
         $db->commit();
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
@@ -364,7 +450,7 @@ $spanCls = [1 => 'lg:col-span-1', 2 => 'lg:col-span-2', 3 => 'lg:col-span-3', 4 
     <a href="<?= url('modules/companies/index.php') ?>" class="text-sm text-slate-500 hover:text-slate-800"><i class="fas fa-arrow-left mr-1.5"></i>Back to list</a>
 </div>
 
-<form method="post" id="companyForm">
+<form method="post" id="companyForm" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
 
     <?php foreach ($sections as $sec): ?>
@@ -405,6 +491,67 @@ $spanCls = [1 => 'lg:col-span-1', 2 => 'lg:col-span-2', 3 => 'lg:col-span-3', 4 
                     <?= $err($name) ?>
                 </div>
 
+                <?php elseif ($f['t'] === 'logo'): ?>
+                <?php
+                    $current = trim((string) $val);
+                    $isUrl = (bool) preg_match('#^https?://#i', $current);
+                    $currentImg = $current === '' ? '' : ($isUrl ? $current : attachmentFileUrl($current));
+                    // A failed submit must come back showing what the user was
+                    // working on, not fall back to the stored value.
+                    $posted = trim((string) ($_POST['logo_source'] ?? ''));
+                    $active = $posted !== '' ? $posted : ($isUrl ? 'url' : 'upload');
+                ?>
+                <div class="<?= $span ?>">
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Company Logo</label>
+                    <p class="text-[11px] text-slate-400 mb-2">Shown on invoices, quotations, statements and other printed documents.</p>
+
+                    <div class="flex flex-wrap items-center gap-5 mb-3">
+                        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                            <input type="radio" name="logo_source" value="upload" <?= $active === 'upload' ? 'checked' : '' ?>
+                                   class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                   onchange="companyLogoSourceChanged()">Upload an image
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                            <input type="radio" name="logo_source" value="url" <?= $active === 'url' ? 'checked' : '' ?>
+                                   class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                   onchange="companyLogoSourceChanged()">Link to an image (URL)
+                        </label>
+                    </div>
+
+                    <div class="flex flex-wrap items-start gap-4">
+                        <div id="logo-upload-pane" class="flex-1 min-w-[240px] <?= $active === 'upload' ? '' : 'hidden' ?>">
+                            <input type="file" name="logo_file" id="logo_file" accept=".jpg,.jpeg,.png,.gif"
+                                   class="block w-full text-sm text-slate-600 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                            <p class="text-[11px] text-slate-400 mt-1">JPG, PNG or GIF &middot; max 2 MB</p>
+                            <?php if ($currentImg && !$isUrl): ?>
+                            <label class="mt-2 inline-flex items-center gap-2 text-sm text-slate-600">
+                                <input type="checkbox" name="remove_logo" value="1" class="rounded border-slate-300 text-red-600 focus:ring-red-500">
+                                Remove the current logo
+                            </label>
+                            <?php endif; ?>
+                        </div>
+
+                        <div id="logo-url-pane" class="flex-1 min-w-[240px] <?= $active === 'url' ? '' : 'hidden' ?>">
+                            <input type="url" name="logo_url" value="<?= $isUrl ? htmlspecialchars($current) : '' ?>"
+                                   placeholder="https://example.com/logo.png" class="<?= $cls('logo_path') ?>">
+                            <p class="text-[11px] text-slate-400 mt-1">Must start with http:// or https://</p>
+                        </div>
+
+                        <div class="shrink-0 text-center">
+                            <p class="text-[11px] text-slate-400 mb-1">Preview</p>
+                            <div class="w-40 h-20 flex items-center justify-center border border-slate-200 rounded-lg bg-white overflow-hidden">
+                                <?php if ($currentImg): ?>
+                                <img id="logo-preview" src="<?= htmlspecialchars($currentImg) ?>" alt="Current logo" class="max-h-20 max-w-full object-contain">
+                                <?php else: ?>
+                                <img id="logo-preview" src="" alt="" class="max-h-20 max-w-full object-contain hidden">
+                                <span id="logo-preview-empty" class="text-xs text-slate-400">No logo</span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?= $err('logo_path') ?>
+                </div>
+
                 <?php else: ?>
                 <div class="<?= $span ?>">
                     <label class="block text-xs font-semibold text-slate-500 mb-1"><?= $f['l'] ?><?= !empty($f['req']) ? ' <span class="text-red-500">*</span>' : '' ?></label>
@@ -436,5 +583,73 @@ $spanCls = [1 => 'lg:col-span-1', 2 => 'lg:col-span-2', 3 => 'lg:col-span-3', 4 
         <span class="ml-auto text-xs text-slate-400"><span class="text-red-500">*</span> required</span>
     </div>
 </form>
+
+<script>
+(function () {
+    var MAX_BYTES = <?= (int) companyLogoMaxBytes() ?>;
+
+    window.companyLogoSourceChanged = function () {
+        var useUrl = (document.querySelector('input[name=logo_source]:checked') || {}).value === 'url';
+        document.getElementById('logo-upload-pane').classList.toggle('hidden', useUrl);
+        document.getElementById('logo-url-pane').classList.toggle('hidden', !useUrl);
+    };
+
+    function showPreview(src) {
+        var img = document.getElementById('logo-preview');
+        var empty = document.getElementById('logo-preview-empty');
+        if (!img) { return; }
+        if (src) {
+            img.src = src;
+            img.classList.remove('hidden');
+            if (empty) { empty.classList.add('hidden'); }
+        } else {
+            img.removeAttribute('src');
+            img.classList.add('hidden');
+            if (empty) { empty.classList.remove('hidden'); }
+        }
+    }
+
+    var file = document.getElementById('logo_file');
+    if (file) {
+        file.addEventListener('change', function () {
+            if (!this.files.length) { showPreview(null); return; }
+            var chosen = this.files[0];
+            if (chosen.size > MAX_BYTES) {
+                alert(chosen.name + ' is larger than ' + (MAX_BYTES / 1048576) + ' MB.');
+                this.value = '';
+                showPreview(null);
+                return;
+            }
+            // Only image types are accepted server-side, so a preview of
+            // anything else would be misleading.
+            if (!/^image\/(jpeg|png|gif)$/.test(chosen.type)) {
+                alert('Only JPG, PNG or GIF images can be used as a logo.');
+                this.value = '';
+                showPreview(null);
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function (e) { showPreview(e.target.result); };
+            reader.readAsDataURL(chosen);
+        });
+    }
+
+    // A pasted URL should preview without a round trip.
+    var urlBox = document.querySelector('[name=logo_url]');
+    if (urlBox) {
+        urlBox.addEventListener('change', function () {
+            showPreview(/^https?:\/\//i.test(this.value.trim()) ? this.value.trim() : null);
+        });
+    }
+
+    // A remove request supersedes the preview it replaces.
+    var removeBox = document.querySelector('[name=remove_logo]');
+    if (removeBox) {
+        removeBox.addEventListener('change', function () {
+            if (this.checked) { showPreview(null); }
+        });
+    }
+})();
+</script>
 
 <?php require_once '../../includes/footer.php'; ?>
