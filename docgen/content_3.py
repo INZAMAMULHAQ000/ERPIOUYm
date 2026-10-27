@@ -61,6 +61,9 @@ def render(b):
         "Uploaded documents classified by type with uploader and file size.",
     ])
     b.h2("21.6  The customer 360 view")
+    b.image("screenshots/08-customers.png",
+            caption="Figure 8 - The customer master and 360 view: credit, limits, contacts, locations, notes and files "
+                    "on one business record.")
     b.p("One page answers the four questions a relationship owner actually asks. Credit: limit, rating, "
         "available credit and a utilisation bar. Money: invoice count, outstanding, overdue, and a "
         "twelve-month chart of billed versus collected. Activity: recent invoices, open deals and open "
@@ -142,6 +145,8 @@ def render(b):
     b.lead("Delivery work: a project register, milestones, a genuinely interactive task board, shared "
            "ownership, and the hours that make it all measurable.")
     b.h2("23.1  The project register")
+    b.image("screenshots/05-projects.png",
+            caption="Figure 9 - The project register with milestones, tasks and time tracked against every engagement.")
     b.table(
         ["Field or behaviour", "Detail"],
         [["Core record", "Unique project code, name, client, description, start and end dates, estimated hours, project manager, status and priority."],
@@ -155,6 +160,9 @@ def render(b):
     b.p("Each project holds milestones with a name, description, due date and a status of pending, in "
         "progress, completed or cancelled, ordered by due date so the critical path is readable at a glance.")
     b.h2("23.3  Tasks")
+    b.image("screenshots/06-tasks.png",
+            caption="Figure 10 - The task board: table and drag-and-drop Kanban view with bucket columns and "
+                    "attachment trash.")
     b.bullets([
         "Task records carry title, description, start and due dates, estimated hours, one of six statuses — to do, in progress, review, testing, completed, blocked — one of four priorities, and a manual progress percentage.",
         "Multiple people can be assigned to one task, each added or removed individually, alongside a single primary owner.",
@@ -224,6 +232,9 @@ def render(b):
         "their target, with hours elapsed against target listed, so an agent can act before the breach rather "
         "than after it.")
     b.h2("24.6  The ticket queue")
+    b.image("screenshots/07-tickets.png",
+            caption="Figure 11 - The service-desk queue: live breach flags, ownership trail, SLA timers and ticket "
+                    "detail.")
     b.bullets([
         "Tiles for open, in progress, resolved and SLA-breached tickets.",
         "Filters on status, priority, category, assigned agent and date range, with all active filters preserved through pagination.",
@@ -237,6 +248,9 @@ def render(b):
         "tags; filters cover category and status; a view counter increments on every read; and tiles show "
         "published and draft counts.")
     b.h2("24.8  Dashboards and reports")
+    b.image("screenshots/17-helpdesk-dash.png",
+            caption="Figure 12 - The helpdesk workspace: open, in-progress and breached tickets, SLA timers "
+                    "and queue management.")
     b.bullets([
         "Service home page with open, in-progress, resolved and breached tiles, a tickets-by-priority chart and a tickets-by-category chart.",
         "An SLA alerts panel listing tickets approaching breach with hours elapsed against target.",
@@ -254,6 +268,9 @@ def render(b):
     b.lead("Several legal entities are not the same thing as one company with a filter. QASWA ERP treats "
            "entities as first-class objects with their own years, sequences, currencies, ledgers and rules.")
     b.h2("25.1  The company master")
+    b.image("screenshots/12-companies.png",
+            caption="Figure 7 - The multi-entity company master: companies, groups, brands and the active entity "
+                    "switcher that drives every screen.")
     b.table(
         ["Group", "Attributes held"],
         [["Identity", "Code, legal and trade name, entity type across LLC, sole proprietorship, partnership, free-zone establishment, branch, subsidiary, holding, non-government organisation, government body and trust, business category and group."],

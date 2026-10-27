@@ -410,6 +410,44 @@ class Builder:
         p.paragraph_format.space_after = Pt(pts)
         r = p.add_run(""); set_run_font(r); r.font.size = Pt(2)
 
+    def image(self, path, caption=None, width_cm=16.6, full_page=False):
+        # Embeds an image if the file exists; prints a muted placeholder caption otherwise
+        # so the document structure (and pagination) stays identical during drafting.
+        import os as _os
+        abs_path = path
+        if not _os.path.isabs(abs_path):
+            # resolve relative to the repo root (parent of the docgen scripts)
+            abs_path = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.dirname(__file__)), path))
+        p = self.doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(6)
+        p.paragraph_format.space_after = Pt(0)
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if abs_path and _os.path.exists(abs_path):
+            r = p.add_run()
+            try:
+                r.add_picture(abs_path, width=Cm(width_cm))
+            except Exception as e:
+                rt = p.add_run("[ image not renderable: %s ]" % e)
+                set_run_font(rt); rt.font.size = Pt(9); rt.italic = True; rt.font.color.rgb = GREY
+        else:
+            r = p.add_run("[  Screenshot placeholder - %s  ]" % _os.path.basename(path))
+            set_run_font(r); r.font.size = Pt(9); r.italic = True; r.font.color.rgb = GREY
+        # thin frame look
+        pPr = p._p.get_or_add_pPr()
+        pbdr = pPr.find(qn("w:pBdr"))
+        if pbdr is None:
+            pbdr = OxmlElement("w:pBdr"); pPr.append(pbdr)
+        for edge in ("top", "bottom", "left", "right"):
+            pbdr.append(_el("w:" + edge, w_val="single", w_sz="4", w_space="6", w_color=HEX_LINE))
+        if caption:
+            cap = self.doc.add_paragraph()
+            cap.paragraph_format.space_before = Pt(6)
+            cap.paragraph_format.space_after = Pt(10)
+            cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = cap.add_run(caption); set_run_font(r)
+            r.font.size = Pt(8.5); r.italic = True; r.font.color.rgb = GREY
+        self.spacer(2)
+
     def pagebreak(self):
         self.doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
@@ -448,7 +486,7 @@ def build_cover(b):
          ["Scope", "All 58 business modules, the finance close suite, the procurement lifecycle, "
                    "the people and payroll suite, group consolidation and the %s Intelligence layer"
                    % BRAND.split()[0]],
-         ["Reading time", "Approximately 60 minutes; each chapter stands alone"],
+         ["Reading time", "Approximately 100 minutes; each chapter stands alone"],
          ["Classification", "Commercial in confidence — issued for evaluation purposes"]],
         widths=[3.2, 13.8], kind="kv", size=9.5)
     b.spacer(16)

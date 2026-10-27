@@ -28,7 +28,7 @@ from docx.oxml.ns import qn
 
 import build_docx as bd
 from build_docx import Builder, field, set_run_font, para_border, GREY, NAVY, HEX_LINE
-import content_1, content_2, content_3, content_4, content_5
+import content_1, content_2, content_3, content_4, content_5, content_6
 
 
 def decorate_body_section(b):
@@ -102,7 +102,7 @@ def main():
     b.new_section_body()
     decorate_body_section(b)
 
-    for mod in (content_1, content_2, content_3, content_4, content_5):
+    for mod in (content_1, content_2, content_3, content_4, content_6, content_5):
         mod.render(b)
 
     b.spacer(18)

@@ -120,7 +120,7 @@ def render(b):
          ["Journal voucher", "Manual or generated accounting entry", "By voucher type prefix"],
          ["Customer invoice", "Bill raised to a customer", "By company invoice sequence"],
          ["Customer receipt", "Money received from a customer", "By company receipt sequence"],
-         ["Credit note", "Reduction of a customer's balance", "CN-YYYYMM-####"],
+         ["Credit note", "Reduction of a customer's balance", "CN-YYYYMM-NNNN"],
          ["Debit note", "Reduction of a supplier's balance", "By company debit sequence"],
          ["Stock movement", "Issue or receipt of inventory", "SM-2026-000001"],
          ["Stock adjustment", "Count correction with reason", "ADJ-2026-000001"],

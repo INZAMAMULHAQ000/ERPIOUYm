@@ -9,6 +9,9 @@ def render(b):
            "statement and export engine, and live analytics dashboards — plus scheduled delivery so the "
            "report comes to people instead of people going to the report.")
     b.h2("30.1  The report centre")
+    b.image("screenshots/14-reports.png",
+            caption="Figure 13 - The report centre: statement sets, filters, export formats and scheduled "
+                    "delivery.")
     b.table(
         ["Group", "Reports available"],
         [["Human resources", "Employee summary · Attendance report showing present, absent, late and attendance percentage · Leave summary"],
@@ -66,6 +69,12 @@ def render(b):
         "agree to their subledgers, that the tax subledger agrees to the ledger, and the fixed asset, payroll, "
         "bank and budget positions.")
     b.h2("30.8  Analytics and the executive dashboard")
+    b.image("screenshots/15-analytics.png",
+            caption="Figure 14 - The analytics workspace: period selectors, key-figure strips and business "
+                    "dashboards.")
+    b.image("screenshots/16-executive.png",
+            caption="Figure 15 - The executive dashboard: revenue, margin, headcount, projects, invoices, tickets "
+                    "and cash position in one view.")
     b.table(
         ["View", "Content"],
         [["Analytics workspace", "A period selector across seven, thirty, ninety or three hundred and sixty-five days, with key-figure strips and charts for human resources, projects, customer management, finance and service — revenue against expenses, department headcount, ticket status, lead sources and attendance trends — plus a chart gallery demonstrating the visualisation set."],
@@ -191,6 +200,9 @@ def render(b):
     b.lead("The single most important operational question about any business system: can your own "
            "administrators change it without a development project?")
     b.h2("33.1  The configuration console")
+    b.image("screenshots/13-settings.png",
+            caption="Figure 16 - The configuration console: currencies, exchange rates, document numbering, "
+                    "reference lists and branding.")
     b.p("Settings are grouped as branding, finance, general and inventory, each with on-screen help, and only "
         "registered keys are accepted so a stray edit cannot create an unknown setting. Changes take effect "
         "immediately and are audited. Supplied keys include the application name, a fallback base currency, "

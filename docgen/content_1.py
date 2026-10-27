@@ -247,6 +247,9 @@ def render(b):
         "session ends immediately with an explanation rather than continuing quietly. Signing out destroys "
         "the session and records the event.")
     b.h2("4.2  The home dashboard")
+    b.image("screenshots/01-dashboard.png",
+            caption="Figure 1 - The QASWA ERP home dashboard, the single starting point for finance, procurement, "
+                    "people, projects, service delivery and the intelligence layer.")
     b.bullets([
         ("Personal layout.", "Each user arranges their own dashboard. A Customize mode exposes a widget "
          "catalogue, lets the person drag widgets into order, add or remove them, resize them, and save; "
@@ -320,6 +323,9 @@ def render(b):
         "The finance dashboard header states the active year and its date range so nobody posts into the wrong period by accident.",
     ])
     b.h2("5.2  Chart of accounts")
+    b.image("screenshots/02-finance.png",
+            caption="Figure 2 - The finance workspace: chart of accounts, financial periods and posting activity "
+                    "on one controlled surface.")
     b.p("Accounts are maintained with a code, name, account group, account type, nature (asset, liability, "
         "equity, income or expense), a parent-group hierarchy presented as a tree, an opening balance with "
         "its debit or credit direction, a display order, an active flag, and a switch that decides whether "

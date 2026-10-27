@@ -181,6 +181,9 @@ def render(b):
     b.lead("Commitment, delivery and settlement: purchase orders with formal amendment, receipts with "
            "inspection, three-way matching, and the debit note that corrects it.")
     b.h2("14.1  Purchase orders")
+    b.image("screenshots/03-procurement.png",
+            caption="Figure 3 - The procurement workspace: requisitions, sourcing, orders, receipts, matching and returns "
+                    "in one connected chain.")
     b.p("A purchase order is created from the award and retains the complete requisition → RFQ → quotation → "
         "award → order chain on every line, which is what makes the document self-explaining years later. "
         "The header carries buyer, requester, payment and delivery terms, delivery location, Incoterms, "
@@ -294,6 +297,9 @@ def render(b):
          ["Settings", "Allow negative stock, default costing method, default warehouse and location, movement prefix, require adjustment approval, require transfer approval."]],
         widths=[3.4, 13.6], kind="kv")
     b.h2("16.4  The inventory command centre")
+    b.image("screenshots/04-inventory.png",
+            caption="Figure 4 - The inventory command centre: balances, reservations, movements and stock risk "
+                    "visualised at a glance.")
     b.bullets([
         "Stock value, active items, and on-hand, reserved and available totals.",
         "Pending approvals, so a stalled adjustment does not quietly misstate stock.",
@@ -421,6 +427,9 @@ def render(b):
     b.lead("The personnel file, the daily attendance register, the leave engine and the calendar — with "
            "expiry surveillance built in.")
     b.h2("19.1  The employee record")
+    b.image("screenshots/09-employees.png",
+            caption="Figure 17 - The employee register: personal data, departments, documents and balances on "
+                    "one record.")
     b.table(
         ["Group", "Fields and behaviour"],
         [["Personal", "Name, gender, date of birth, marital status, phone, email, address and photograph."],
@@ -442,6 +451,9 @@ def render(b):
         "Reporting lines are held on each employee record, giving a practical management chain for approvals and escalation.",
     ])
     b.h2("19.4  Attendance")
+    b.image("screenshots/10-attendance.png",
+            caption="Figure 5 - Daily attendance captured and corrected by status chip, with today's present, absent "
+                    "and on-leave counts feeding the HR home page.")
     b.table(
         ["Capability", "Detail"],
         [["Daily marking", "Check-in and check-out times, status, late minutes and remarks, per employee per day."],
@@ -452,6 +464,9 @@ def render(b):
          ["Dashboard", "Today's present, absent and on-leave counts feed the HR home page."]],
         widths=[3.0, 14.0], kind="kv")
     b.h2("19.5  Leave types and entitlement")
+    b.image("screenshots/11-leave.png",
+            caption="Figure 6 - Leave application and live balance checking, with the allocation grid behind every "
+                    "entitlement.")
     b.p("Leave types are defined with a unique code, annual days entitlement, a carry-forward switch and an "
         "active flag. Annual balances are allocated to every employee for every leave type from a single "
         "pre-filled grid, so a year's entitlement is issued in one action rather than one record at a time.")
